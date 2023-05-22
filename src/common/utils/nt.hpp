@@ -41,27 +41,33 @@ namespace utils::nt
 		operator HMODULE() const;
 
 		void unprotect() const;
-		void* get_entry_point() const;
-		size_t get_relative_entry_point() const;
+		[[nodiscard]] void* get_entry_point() const;
+		[[nodiscard]] size_t get_relative_entry_point() const;
 
-		bool is_valid() const;
-		std::string get_name() const;
-		std::string get_path() const;
-		std::string get_folder() const;
-		std::uint8_t* get_ptr() const;
+		[[nodiscard]] bool is_valid() const;
+		[[nodiscard]] std::string get_name() const;
+		[[nodiscard]] std::filesystem::path get_path() const;
+		[[nodiscard]] std::filesystem::path get_folder() const;
+		[[nodiscard]] std::uint8_t* get_ptr() const;
 		void free();
 
-		HMODULE get_handle() const;
+		[[nodiscard]] HMODULE get_handle() const;
 
 		template <typename T>
-		T get_proc(const std::string& process) const
+		[[nodiscard]] T get_proc(const char* process) const
 		{
 			if (!this->is_valid()) T{};
-			return reinterpret_cast<T>(GetProcAddress(this->module_, process.data()));
+			return reinterpret_cast<T>(GetProcAddress(this->module_, process));
 		}
 
 		template <typename T>
-		std::function<T> get(const std::string& process) const
+		[[nodiscard]] T get_proc(const std::string& process) const
+		{
+			return get_proc<T>(process.data());
+		}
+
+		template <typename T>
+		[[nodiscard]] std::function<T> get(const std::string& process) const
 		{
 			if (!this->is_valid()) return std::function<T>();
 			return static_cast<T*>(this->get_proc<void*>(process));
@@ -91,13 +97,14 @@ namespace utils::nt
 			return T();
 		}
 
-		std::vector<PIMAGE_SECTION_HEADER> get_section_headers() const;
+		[[nodiscard]] std::vector<PIMAGE_SECTION_HEADER> get_section_headers() const;
 
-		PIMAGE_NT_HEADERS get_nt_headers() const;
-		PIMAGE_DOS_HEADER get_dos_header() const;
-		PIMAGE_OPTIONAL_HEADER get_optional_header() const;
+		[[nodiscard]] PIMAGE_NT_HEADERS get_nt_headers() const;
+		[[nodiscard]] PIMAGE_DOS_HEADER get_dos_header() const;
+		[[nodiscard]] PIMAGE_OPTIONAL_HEADER get_optional_header() const;
 
-		void** get_iat_entry(const std::string& module_name, const std::string& proc_name) const;
+		[[nodiscard]] void** get_iat_entry(const std::string& module_name, std::string proc_name) const;
+		[[nodiscard]] void** get_iat_entry(const std::string& module_name, const char* proc_name) const;
 
 	private:
 		HMODULE module_;
@@ -166,6 +173,78 @@ namespace utils::nt
 		HANDLE handle_{InvalidHandle};
 	};
 
+
+	class registry_key
+	{
+	public:
+		registry_key() = default;
+
+		registry_key(HKEY key)
+			: key_(key)
+		{
+		}
+
+		registry_key(const registry_key&) = delete;
+		registry_key& operator=(const registry_key&) = delete;
+
+		registry_key(registry_key&& obj) noexcept
+			: registry_key()
+		{
+			this->operator=(std::move(obj));
+		}
+
+		registry_key& operator=(registry_key&& obj) noexcept
+		{
+			if (this != obj.GetRef())
+			{
+				this->~registry_key();
+				this->key_ = obj.key_;
+				obj.key_ = nullptr;
+			}
+
+			return *this;
+		}
+
+		~registry_key()
+		{
+			if (this->key_)
+			{
+				RegCloseKey(this->key_);
+			}
+		}
+
+		operator HKEY() const
+		{
+			return this->key_;
+		}
+
+		operator bool() const
+		{
+			return this->key_ != nullptr;
+		}
+
+		HKEY* operator&()
+		{
+			return &this->key_;
+		}
+
+		registry_key* GetRef()
+		{
+			return this;
+		}
+
+		const registry_key* GetRef() const
+		{
+			return this;
+		}
+
+	private:
+		HKEY key_{};
+	};
+
+	registry_key open_or_create_registry_key(const HKEY base, const std::string& input);
+
+	bool is_wine();
 	bool is_shutdown_in_progress();
 
 	__declspec(noreturn) void raise_hard_exception();
@@ -173,4 +252,6 @@ namespace utils::nt
 
 	void relaunch_self();
 	__declspec(noreturn) void terminate(uint32_t code = 0);
+
+	std::string get_user_name();
 }

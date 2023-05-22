@@ -4,7 +4,7 @@
 #include <utils/nt.hpp>
 #include <utils/io.hpp>
 
-#include "loader/component_loader.hpp"
+#include "../component/steam_proxy.hpp"
 
 namespace steam
 {
@@ -104,8 +104,6 @@ namespace steam
 		results_.clear();
 	}
 
-	//extern "C" {
-
 	bool SteamAPI_RestartAppIfNecessary()
 	{
 		return false;
@@ -120,6 +118,9 @@ namespace steam
 		::utils::nt::library::load(steam_path / "vstdlib_s64.dll");
 		::utils::nt::library::load(steam_path / "gameoverlayrenderer64.dll");
 		::utils::nt::library::load(steam_path / "steamclient64.dll");
+
+		steam_proxy::initialize();
+
 		return true;
 	}
 
@@ -205,8 +206,6 @@ namespace steam
 			return &c;
 		}
 
-
-		MessageBoxA(0, interfacename, __FUNCTION__, 0);
 		return nullptr;
 	}
 
@@ -282,6 +281,4 @@ namespace steam
 		static user_stats user_stats;
 		return &user_stats;
 	}
-
-	//}
 }

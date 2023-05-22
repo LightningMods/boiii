@@ -47,8 +47,13 @@
 #include <Psapi.h>
 #include <urlmon.h>
 #include <atlbase.h>
+#include <atlsafe.h>
 #include <iphlpapi.h>
 #include <wincrypt.h>
+#include <dwmapi.h>
+#include <shellscalingapi.h>
+#include <d3d11.h>
+#include <dxgi1_6.h>
 
 // min and max is required by gdi, therefore NOMINMAX won't work
 #ifdef max
@@ -59,24 +64,30 @@
 #undef min
 #endif
 
-#include <map>
-#include <atomic>
-#include <vector>
-#include <mutex>
-#include <queue>
-#include <regex>
-#include <chrono>
-#include <thread>
-#include <fstream>
-#include <iostream>
-#include <utility>
-#include <filesystem>
-#include <functional>
-#include <sstream>
-#include <optional>
-#include <unordered_set>
-#include <variant>
 #include <cassert>
+#include <cstring>
+#include <cctype>
+
+#include <array>
+#include <atomic>
+#include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <functional>
+#include <iostream>
+#include <limits>
+#include <map>
+#include <mutex>
+#include <optional>
+#include <queue>
+#include <random>
+#include <regex>
+#include <sstream>
+#include <thread>
+#include <unordered_set>
+#include <utility>
+#include <variant>
+#include <vector>
 
 #include <udis86.h>
 #include <MinHook.h>
@@ -84,7 +95,7 @@
 #include <asmjit/x86/x86assembler.h>
 
 #define RAPIDJSON_NOEXCEPT
-#define RAPIDJSON_ASSERT(cond) if(cond); else throw std::runtime_error("rapidjson assert fail");
+#define RAPIDJSON_ASSERT(cond) if (cond); else throw std::runtime_error("rapidjson assert fail");
 
 #include <rapidjson/document.h>
 #include <rapidjson/prettywriter.h>
@@ -98,5 +109,7 @@
 #pragma comment(lib, "urlmon.lib" )
 #pragma comment(lib, "iphlpapi.lib")
 #pragma comment(lib, "Crypt32.lib")
+#pragma comment(lib, "d3d11.lib")
+#pragma comment(lib, "dxgi.lib")
 
 using namespace std::literals;

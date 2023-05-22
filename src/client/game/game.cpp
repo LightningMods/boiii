@@ -1,43 +1,92 @@
 #include <std_include.hpp>
 
-#include "loader/component_loader.hpp"
 #include "game.hpp"
+
+#include <utils/flags.hpp>
+#include <utils/finally.hpp>
 
 namespace game
 {
-	// inlined in cod, functionality stolen from https://github.com/id-Software/Quake-III-Arena/blob/master/code/win32/win_syscon.c#L520
-	int Conbuf_CleanText(const char* source, char* target)
+	namespace
 	{
-		char* b = target;
-		int i = 0;
-		while (source[i] && ((b - target) < sizeof(target) - 1))
+		const utils::nt::library& get_host_library()
 		{
-			if (source[i] == '\n' && source[i + 1] == '\r')
+			static const auto host_library = []
 			{
-				b[0] = '\r';
-				b[1] = '\n';
-				b += 2;
-				i++;
-			}
-			else if (source[i] == '\r' || source[i] == '\n')
-			{
-				b[0] = '\r';
-				b[1] = '\n';
-				b += 2;
-			}
-			else if (source && source[0] == '^' && source[1] && source[1] != '^' && source[1] >= 48 && source[1] <= 64) // Q_IsColorString
-			{
-				i++;
-			}
-			else
-			{
-				*b = source[i]; // C6011 here, should we be worried?
-				b++;
-			}
-			i++;
-		}
+				utils::nt::library host{};
+				if (!host || host == utils::nt::library::get_by_address(get_base))
+				{
+					throw std::runtime_error("Invalid host application");
+				}
 
-		*b = 0;
-		return static_cast<int>(b - target);
+				return host;
+			}();
+
+			return host_library;
+		}
+	}
+
+	size_t get_base()
+	{
+		static const auto base = reinterpret_cast<size_t>(get_host_library().get_ptr());
+		return base;
+	}
+
+	bool is_server()
+	{
+		static const auto server = get_host_library().get_optional_header()->CheckSum == 0x14C28B4;
+		return server;
+	}
+
+	bool is_client()
+	{
+		static const auto server = get_host_library().get_optional_header()->CheckSum == 0x888C368;
+		return server;
+	}
+
+	bool is_legacy_client()
+	{
+		static const auto server = get_host_library().get_optional_header()->CheckSum == 0x8880704;
+		return server;
+	}
+
+	bool is_headless()
+	{
+		static const auto headless = utils::flags::has_flag("headless");
+		return headless;
+	}
+
+	void show_error(const std::string& text, const std::string& title)
+	{
+		if(is_headless())
+		{
+			puts(text.data());
+		}
+		else
+		{
+			MessageBoxA(nullptr, text.data(), title.data(), MB_ICONERROR | MB_SETFOREGROUND | MB_TOPMOST);
+		}
+	}
+
+	std::filesystem::path get_appdata_path()
+	{
+		static const auto appdata_path = []
+		{
+			PWSTR path;
+			if (FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &path)))
+			{
+				throw std::runtime_error("Failed to read APPDATA path!");
+			}
+
+			auto _ = utils::finally([&path]
+			{
+				CoTaskMemFree(path);
+			});
+
+			static auto appdata = std::filesystem::path(path) / "boiii";
+			return appdata;
+		}();
+
+		return appdata_path;
 	}
 }

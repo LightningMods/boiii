@@ -5,13 +5,25 @@ namespace demonware
 {
 	bdDDL::bdDDL() : service(96, "bdDDL")
 	{
-		this->register_task(1, &bdDDL::idk);
+		this->register_task(1, &bdDDL::verifyDDLFiles);
 	}
 
-	void bdDDL::idk(service_server* server, byte_buffer* /*buffer*/) const
+	void bdDDL::verifyDDLFiles(service_server* server, byte_buffer* buffer) const
 	{
-		// TODO: Read data as soon as needed
+		uint32_t count;
+		buffer->read_uint32(&count);
+
 		auto reply = server->create_reply(this->task_id());
-		reply->send();
+
+		for (uint32_t i = 0; i < count; i++)
+		{
+			auto checksum = std::make_unique<bdDDLChecksumResult>();
+			checksum->deserialize(buffer);
+			checksum->checksum_matched = true;
+
+			reply.add(checksum);
+		}
+
+		reply.send();
 	}
 }

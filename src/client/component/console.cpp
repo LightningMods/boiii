@@ -1,4 +1,5 @@
 #include <std_include.hpp>
+#include "console.hpp"
 #include "loader/component_loader.hpp"
 #include "resource.hpp"
 
@@ -6,6 +7,9 @@
 
 #include <utils/thread.hpp>
 #include <utils/hook.hpp>
+#include <utils/flags.hpp>
+#include <utils/concurrency.hpp>
+#include <utils/image.hpp>
 
 #define CONSOLE_BUFFER_SIZE 16384
 #define WINDOW_WIDTH 608
@@ -14,9 +18,11 @@ namespace console
 {
 	namespace
 	{
-		HANDLE logo;
+		utils::image::object logo;
 		std::atomic_bool started{false};
 		std::atomic_bool terminate_runner{false};
+		utils::concurrency::container<std::function<void(const std::string& message)>> interceptor{};
+		utils::concurrency::container<std::queue<std::string>> message_queue{};
 
 		void print_message(const char* message)
 		{
@@ -28,6 +34,53 @@ namespace console
 			{
 				game::Com_Printf(0, 0, "%s", message);
 			}
+		}
+
+		void queue_message(const char* message)
+		{
+			interceptor.access([message](const std::function<void(const std::string&)>& callback)
+			{
+				if (callback)
+				{
+					callback(message);
+				}
+			});
+
+			message_queue.access([message](std::queue<std::string>& queue)
+			{
+				queue.push(message);
+			});
+		}
+
+		void print_message_to_console(const char* message)
+		{
+			if (game::is_headless())
+			{
+				fputs(message, stdout);
+				return;
+			}
+
+			static auto print_func = utils::hook::assemble([](utils::hook::assembler& a)
+			{
+				a.push(rbx);
+				a.mov(eax, 0x8030);
+				a.jmp(game::select(0x142332AA7, 0x140597527));
+			});
+
+			static_cast<void(*)(const char*)>(print_func)(message);
+		}
+
+		std::queue<std::string> empty_message_queue()
+		{
+			std::queue<std::string> current_queue{};
+
+			message_queue.access([&](std::queue<std::string>& queue)
+			{
+				current_queue = std::move(queue);
+				queue = {};
+			});
+
+			return current_queue;
 		}
 
 		void print_stub(const char* fmt, ...)
@@ -43,6 +96,12 @@ namespace console
 			va_end(ap);
 		}
 
+		INT_PTR get_gray_brush()
+		{
+			static utils::image::object b(CreateSolidBrush(RGB(50, 50, 50)));
+			return reinterpret_cast<INT_PTR>(b.get());
+		}
+
 		LRESULT con_wnd_proc(const HWND hwnd, const UINT msg, const WPARAM wparam, const LPARAM lparam)
 		{
 			switch (msg)
@@ -51,28 +110,31 @@ namespace console
 			case WM_CTLCOLORSTATIC:
 				SetBkColor(reinterpret_cast<HDC>(wparam), RGB(50, 50, 50));
 				SetTextColor(reinterpret_cast<HDC>(wparam), RGB(232, 230, 227));
-				return reinterpret_cast<INT_PTR>(CreateSolidBrush(RGB(50, 50, 50)));
+				return get_gray_brush();
 			case WM_CLOSE:
 				game::Cbuf_AddText(0, "quit\n");
 				[[fallthrough]];
 			default:
-				return utils::hook::invoke<LRESULT>(0x142333520_g, hwnd, msg, wparam, lparam);
+				return utils::hook::invoke<LRESULT>(game::select(0x142332960, 0x1405973E0), hwnd, msg, wparam, lparam);
 			}
 		}
 
 		LRESULT input_line_wnd_proc(const HWND hwnd, const UINT msg, const WPARAM wparam, const LPARAM lparam)
 		{
-			return utils::hook::invoke<LRESULT>(0x142333820_g, hwnd, msg, wparam, lparam);
+			return utils::hook::invoke<LRESULT>(game::select(0x142332C60, 0x1405976E0), hwnd, msg, wparam, lparam);
 		}
 
 		void sys_create_console_stub(const HINSTANCE h_instance)
 		{
-			// C6262
-			char text[CONSOLE_BUFFER_SIZE];
-			char clean_console_buffer[CONSOLE_BUFFER_SIZE];
+			if (game::is_headless())
+			{
+				return;
+			}
+
+			char text[CONSOLE_BUFFER_SIZE]{0};
 
 			const auto* class_name = "BOIII WinConsole";
-			const auto* window_name = "BOIII Console";
+			const auto* window_name = game::is_server() ? "BOIII Server" : "BOIII Console";
 
 			WNDCLASSA wnd_class{};
 			wnd_class.style = 0;
@@ -130,7 +192,7 @@ namespace console
 				utils::hook::set<HWND>(game::s_wcd::codLogo, CreateWindowExA(
 					                       0, "Static", nullptr, 0x5000000Eu, 5, 5, 0, 0, *game::s_wcd::hWnd,
 					                       reinterpret_cast<HMENU>(1), h_instance, nullptr));
-				SendMessageA(*game::s_wcd::codLogo, 0x172u, 0, reinterpret_cast<LPARAM>(logo));
+				SendMessageA(*game::s_wcd::codLogo, STM_SETIMAGE, IMAGE_BITMAP, logo);
 			}
 
 			// create the input line
@@ -149,34 +211,112 @@ namespace console
 			             0);
 
 			SetFocus(*game::s_wcd::hwndInputLine);
-			game::Con_GetTextCopy(text, 0x4000);
-			game::Conbuf_CleanText(text, clean_console_buffer);
-			SetWindowTextA(*game::s_wcd::hwndBuffer, clean_console_buffer);
+			game::Con_GetTextCopy(text, std::min(0x4000, static_cast<int>(sizeof(text))));
+			SetWindowTextA(*game::s_wcd::hwndBuffer, text);
 		}
 	}
 
-	class component final : public component_interface
+	void set_interceptor(std::function<void(const std::string& message)> callback)
 	{
-	public:
+		interceptor.access([&callback](std::function<void(const std::string&)>& c)
+		{
+			c = std::move(callback);
+		});
+	}
+
+	void remove_interceptor()
+	{
+		set_interceptor({});
+	}
+
+	void set_title(const std::string& title)
+	{
+		if (game::is_headless())
+		{
+			SetConsoleTitleA(title.data());
+		}
+		else
+		{
+			SetWindowTextA(*game::s_wcd::hWnd, title.data());
+		}
+	}
+
+	struct component final : generic_component
+	{
+		component()
+		{
+			if (game::is_headless())
+			{
+				if (!AttachConsole(ATTACH_PARENT_PROCESS))
+				{
+					AllocConsole();
+					AttachConsole(GetCurrentProcessId());
+				}
+
+				ShowWindow(GetConsoleWindow(), SW_SHOW);
+
+				FILE* fp;
+				freopen_s(&fp, "CONIN$", "r", stdin);
+				freopen_s(&fp, "CONOUT$", "w", stdout);
+				freopen_s(&fp, "CONOUT$", "w", stderr);
+			}
+		}
+
 		void post_unpack() override
 		{
-			utils::hook::set<uint8_t>(0x14133D2FE_g, 0xEB); // Always enable ingame console
+			if (!game::is_server())
+			{
+				utils::hook::set<uint8_t>(0x14133D2FE_g, 0xEB); // Always enable ingame console
+				utils::hook::jump(0x141344E44_g, 0x141344E2E_g); // Remove the need to type '\' or '/' to send a console command
 
-			//utils::hook::jump(0x1423337F0_g, print_message);
-			//utils::hook::jump(0x142333660_g, print_message);
-
-			const auto self = utils::nt::library::get_by_address(sys_create_console_stub);
-			logo = LoadImageA(self.get_handle(), MAKEINTRESOURCEA(IMAGE_LOGO), 0, 0, 0, LR_COPYFROMRESOURCE);
+				if (utils::nt::is_wine() && !utils::flags::has_flag("console"))
+				{
+					return;
+				}
+			}
 
 			utils::hook::jump(printf, print_stub);
 
+			utils::hook::jump(game::select(0x142332C30, 0x1405976B0), queue_message);
+			utils::hook::nop(game::select(0x142332C4A, 0x1405976CA), 2); // Print from every thread
+
+			//const auto self = utils::nt::library::get_by_address(sys_create_console_stub);
+			//logo = LoadImageA(self.get_handle(), MAKEINTRESOURCEA(IMAGE_LOGO), 0, 0, 0, LR_COPYFROMRESOURCE);
+
+			const auto res = utils::nt::load_resource(IMAGE_LOGO);
+			const auto img = utils::image::load_image(res);
+			logo = utils::image::create_bitmap(img);
+
 			terminate_runner = false;
 
-			this->console_runner_ = utils::thread::create_named_thread("Console IO", [this]
+			this->message_runner_ = utils::thread::create_named_thread("Console IO", []
+			{
+				while (!terminate_runner)
+				{
+					std::string message_buffer{};
+					auto current_queue = empty_message_queue();
+
+					while (!current_queue.empty())
+					{
+						const auto& msg = current_queue.front();
+						message_buffer.append(msg);
+						current_queue.pop();
+					}
+
+					if (!message_buffer.empty())
+					{
+						print_message_to_console(message_buffer.data());
+					}
+
+					std::this_thread::sleep_for(5ms);
+				}
+			});
+
+			this->console_runner_ = utils::thread::create_named_thread("Console Window", [this]
 			{
 				{
 					static utils::hook::detour sys_create_console_hook;
-					sys_create_console_hook.create(0x1423339C0_g, sys_create_console_stub);
+					sys_create_console_hook.create(game::select(0x142332E00, 0x140597880), sys_create_console_stub);
 
 					game::Sys_ShowConsole();
 					started = true;
@@ -192,15 +332,25 @@ namespace console
 					}
 					else
 					{
-						std::this_thread::sleep_for(1ms);
+						std::this_thread::sleep_for(5ms);
 					}
 				}
 			});
+
+			while (!started)
+			{
+				std::this_thread::sleep_for(10ms);
+			}
 		}
 
 		void pre_destroy() override
 		{
 			terminate_runner = true;
+
+			if (this->message_runner_.joinable())
+			{
+				this->message_runner_.join();
+			}
 
 			if (this->console_runner_.joinable())
 			{
@@ -209,7 +359,8 @@ namespace console
 		}
 
 	private:
-		std::thread console_runner_;
+		std::thread console_runner_{};
+		std::thread message_runner_{};
 	};
 }
 

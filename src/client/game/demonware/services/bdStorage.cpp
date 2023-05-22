@@ -16,6 +16,7 @@ namespace demonware
 		this->register_task(20, &bdStorage::list_publisher_files);
 		this->register_task(21, &bdStorage::get_publisher_file);
 		this->register_task(24, &bdStorage::upload_files);
+		this->register_task(18, &bdStorage::upload_files_new);
 		this->register_task(16, &bdStorage::get_files);
 		this->register_task(12, &bdStorage::unk12);
 		this->register_task(10, &bdStorage::set_user_file);
@@ -95,20 +96,20 @@ namespace demonware
 
 		if (this->load_publisher_resource(filename, data))
 		{
-			auto* info = new bdFileInfo;
+			auto info = std::make_unique<bdFileInfo>();
 
 			info->file_id = *reinterpret_cast<const uint64_t*>(utils::cryptography::sha1::compute(filename).data());
 			info->filename = filename;
 			info->create_time = 0;
 			info->modified_time = info->create_time;
-			info->file_size = uint32_t(data.size());
+			info->file_size = static_cast<uint32_t>(data.size());
 			info->owner_id = 0;
 			info->priv = false;
 
-			reply->add(info);
+			reply.add(info);
 		}
 
-		reply->send();
+		reply.send();
 	}
 
 	void bdStorage::get_publisher_file(service_server* server, byte_buffer* buffer)
@@ -130,12 +131,13 @@ namespace demonware
 #endif
 
 			auto reply = server->create_reply(this->task_id());
-			reply->add(new bdFileData(data));
-			reply->send();
+			auto result = std::make_unique<bdFileData>(data);
+			reply.add(result);
+			reply.send();
 		}
 		else
 		{
-			server->create_reply(this->task_id(), game::BD_NO_FILE)->send();
+			server->create_reply(this->task_id(), game::BD_NO_FILE).send();
 		}
 	}
 
@@ -154,7 +156,7 @@ namespace demonware
 		const auto path = get_user_file_path(filename);
 		utils::io::write_file(path, data);
 
-		auto* info = new bdFileInfo;
+		auto info = std::make_unique<bdFileInfo>();
 
 		info->file_id = *reinterpret_cast<const uint64_t*>(utils::cryptography::sha1::compute(filename).data());
 		info->filename = filename;
@@ -165,13 +167,13 @@ namespace demonware
 		info->priv = priv;
 
 		auto reply = server->create_reply(this->task_id());
-		reply->add(info);
-		reply->send();
+		reply.add(info);
+		reply.send();
 	}
 
 	std::string bdStorage::get_user_file_path(const std::string& name)
 	{
-		return "players/user/" + name;
+		return "boiii_players/user/" + name;
 	}
 
 	void bdStorage::upload_files(service_server* server, byte_buffer* buffer) const
@@ -201,7 +203,7 @@ namespace demonware
 			const auto path = get_user_file_path(filename);
 			utils::io::write_file(path, data);
 
-			auto* info = new bdFile2;
+			auto info = std::make_unique<bdFile2>();
 
 			info->unk1 = 0;
 			info->unk2 = 0;
@@ -216,18 +218,62 @@ namespace demonware
 			printf("[DW]: [bdStorage]: set user file: %s\n", filename.data());
 #endif
 
-			reply->add(info);
+			reply.add(info);
 		}
 
-		reply->send();
+		reply.send();
+	}
+
+	void bdStorage::upload_files_new(service_server* server, byte_buffer* buffer) const
+	{
+		uint64_t owner;
+		uint32_t numfiles;
+		std::string game, platform;
+
+		buffer->read_string(&game);
+		buffer->read_uint64(&owner);
+		buffer->read_string(&platform);
+		buffer->read_uint32(&numfiles);
+
+		auto reply = server->create_reply(this->task_id());
+
+		for (uint32_t i = 0; i < numfiles; i++)
+		{
+			std::string filename, data;
+			uint32_t version;
+			bool priv;
+
+			buffer->read_string(&filename);
+			buffer->read_blob(&data);
+			buffer->read_uint32(&version);
+			buffer->read_bool(&priv);
+
+			const auto path = get_user_file_path(filename);
+			utils::io::write_file(path, data);
+
+			auto info = std::make_unique<bdContextUserStorageFileInfo>();
+
+			info->modifed_time = static_cast<uint32_t>(time(nullptr));
+			info->create_time = info->modifed_time;
+			info->priv = priv;
+			info->owner_id = owner;
+			info->account_type = platform;
+			info->filename = filename;
+
+#ifndef NDEBUG
+			printf("[DW]: [bdStorage]: set user file: %s\n", filename.data());
+#endif
+
+			reply.add(info);
+		}
+
+		reply.send();
 	}
 
 	void bdStorage::get_files(service_server* server, byte_buffer* buffer) const
 	{
 		std::string context;
 		buffer->read_string(&context);
-
-		//printf("demonware: ctx '%s'\n", context.data());
 
 		uint32_t count;
 		buffer->read_uint32(&count);
@@ -241,7 +287,6 @@ namespace demonware
 			buffer->read_uint64(&user_id);
 			buffer->read_string(&acc_type);
 
-			//printf("demonware: user 0x%llX '%s'\n", user_id, acc_type.data());
 			user_ctxs.emplace_back(user_id, acc_type);
 		}
 
@@ -253,50 +298,45 @@ namespace demonware
 		{
 			std::string filename;
 			buffer->read_string(&filename);
-			//printf("demonware: file '%s'\n", filename.data());
-
 			filenames.push_back(std::move(filename));
 		}
 
 		auto reply = server->create_reply(this->task_id());
-		uint32_t available = 0;
-
 		for (size_t i = 0u; i < filenames.size(); i++)
 		{
+			auto entry = std::make_unique<bdFileQueryResult>();
+			entry->user_id = user_ctxs.at(i).first;
+			entry->platform = user_ctxs.at(i).second;
+			entry->filename = filenames.at(i);
+			entry->errorcode = 0;
+
 			auto& name = filenames.at(i);
 			std::string filedata;
 			if (utils::io::read_file(get_user_file_path(name), &filedata))
 			{
-				auto* entry = new bdFileQueryResult;
-				entry->user_id = user_ctxs.at(i).first;
-				entry->platform = user_ctxs.at(i).second;
-				entry->filename = filenames.at(i);
-				entry->errorcode = 0;
 				entry->filedata = filedata;
-				reply->add(entry);
-				available++;
-				//std::cout << "demonware: user file '" << name << "' dispatched.\n";
+#ifndef NDEBUG
+				printf("[DW]: [bdStorage]: get user file: %s\n", name.data());
+#endif
 			}
 			else
 			{
-				//std::cout << "demonware: user file '" << name << "' not found.\n";
+				entry->errorcode = game::BD_NO_FILE;
+#ifndef NDEBUG
+				printf("[DW]: [bdStorage]: missing user file: %s\n", name.data());
+#endif
 			}
+
+			reply.add(entry);
 		}
 
-		if (available == count)
-		{
-			reply->send();
-		}
-		else
-		{
-			server->create_reply(this->task_id(), game::BD_NO_FILE)->send();
-		}
+		reply.send();
 	}
 
 	void bdStorage::unk12(service_server* server, byte_buffer* buffer) const
 	{
 		// TODO:
 		auto reply = server->create_reply(this->task_id());
-		reply->send();
+		reply.send();
 	}
 }

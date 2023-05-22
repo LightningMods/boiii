@@ -31,6 +31,9 @@ namespace utils::cryptography
 
 			std::string serialize(int type = PK_PRIVATE) const;
 
+			std::string get_openssl() const;
+			void set_openssl(const std::string& key);
+
 			void free();
 
 			bool operator==(key& key) const;

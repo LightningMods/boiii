@@ -1,11 +1,8 @@
 #pragma once
 #include "memory.hpp"
-#include <cstdint>
 
-#ifndef ARRAYSIZE
 template <class Type, size_t n>
-size_t ARRAYSIZE(Type (&)[n]) { return n; }
-#endif
+constexpr auto ARRAY_COUNT(Type (&)[n]) { return n; }
 
 namespace utils::string
 {
@@ -21,7 +18,7 @@ namespace utils::string
 
 		char* get(const char* format, const va_list ap)
 		{
-			++this->current_buffer_ %= ARRAYSIZE(this->string_pool_);
+			++this->current_buffer_ %= ARRAY_COUNT(this->string_pool_);
 			auto entry = &this->string_pool_[this->current_buffer_];
 
 			if (!entry->size || !entry->buffer)
@@ -87,14 +84,27 @@ namespace utils::string
 	bool starts_with(const std::string& text, const std::string& substring);
 	bool ends_with(const std::string& text, const std::string& substring);
 
+	bool is_numeric(const std::string& text);
+
 	std::string dump_hex(const std::string& data, const std::string& separator = " ");
 
 	std::string get_clipboard_data();
 
-	void strip(const char* in, char* out, int max);
+	void strip(const char* in, char* out, size_t max);
+	void strip_material(const char* in, char* out, size_t max);
 
 	std::string convert(const std::wstring& wstr);
 	std::wstring convert(const std::string& str);
 
 	std::string replace(std::string str, const std::string& from, const std::string& to);
+
+	void trim(std::string& str);
+
+	void copy(char* dest, size_t max_size, const char* src);
+
+	template <size_t Size>
+	void copy(char (&dest)[Size], const char* src)
+	{
+		copy(dest, Size, src);
+	}
 }

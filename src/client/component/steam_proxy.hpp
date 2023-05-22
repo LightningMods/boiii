@@ -1,4 +1,5 @@
 #pragma once
+
 #include <utils/nt.hpp>
 
 namespace steam_proxy
@@ -16,6 +17,9 @@ namespace steam_proxy
 	};
 
 	using subscribed_item_map = std::unordered_map<uint64_t, subscribed_item>;
+
+	void initialize();
+	void create_ugc();
 
 	void update_subscribed_items();
 	void access_subscribed_items(const std::function<void(const subscribed_item_map&)>& callback);

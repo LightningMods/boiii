@@ -11,6 +11,8 @@
 #include "game/demonware/servers/umbrella_server.hpp"
 #include "game/demonware/server_registry.hpp"
 
+#include "localized_strings.hpp"
+
 #define TCP_BLOCKING true
 #define UDP_BLOCKING false
 
@@ -441,9 +443,8 @@ namespace demonware
 		}
 	}
 
-	class component final : public component_interface
+	struct component final : generic_component
 	{
-	public:
 		component()
 		{
 			udp_servers.create<stun_server>("stun.us.demonware.net");
@@ -456,7 +457,7 @@ namespace demonware
 			tcp_servers.create<umbrella_server>("prod.umbrella.demonware.net");
 		}
 
-		void pre_start() override
+		void post_load() override
 		{
 			register_hook("send", io::send_stub);
 			register_hook("recv", io::recv_stub);
@@ -477,18 +478,29 @@ namespace demonware
 		{
 			server_thread = utils::thread::create_named_thread("Demonware", server_main);
 
-			utils::hook::set<uint8_t>(0x14293E829_g, 0x0); // CURLOPT_SSL_VERIFYPEER
-			utils::hook::set<uint8_t>(0x15F3CCFED_g, 0xAF); // CURLOPT_SSL_VERIFYHOST
-			utils::hook::set<uint8_t>(0x1430B9810_g, 0x0); // HTTPS -> HTTP
+			utils::hook::set<uint8_t>(game::select(0x14293DC69, 0x1407D5879), 0x0); // CURLOPT_SSL_VERIFYPEER
+			utils::hook::set<uint8_t>(game::select(0x15C293850, 0x1407D5865), 0xAF); // CURLOPT_SSL_VERIFYHOST
 
-			utils::hook::copy_string(0x1430B96E0_g, "http://prod.umbrella.demonware.net");
-			utils::hook::copy_string(0x1430B9BE0_g, "http://prod.uno.demonware.net/v1.0");
-			utils::hook::copy_string(0x1430B93C8_g, "http://%s:%d/auth/");
+			utils::hook::copy_string(game::select(0x1430B8670, 0x140EE4C68), "http://prod.umbrella.demonware.net");
 
-			utils::hook::set<uint32_t>(0x141EC4B50_g, 0xC3D08948); // Skip publisher file signature stuff
-			utils::hook::call(0x141EC458C_g, get_ffotd_name); // Return unlocalized ffotd name
-			utils::hook::set<uint64_t>(0x141F04550_g, 0xC300000001B8); // Kill LPC_File_SafeWrite
-			utils::hook::set<uint64_t>(0x141F03180_g, 0xC300000001B8); // Kill LPC_DeleteStale
+			if (game::is_server())
+			{
+				return;
+			}
+
+			utils::hook::copy_string(0x1430B8B70_g, "http://prod.uno.demonware.net/v1.0");
+
+			utils::hook::set<uint8_t>(0x1430B87A0_g, 0x0); // HTTPS -> HTTP
+			utils::hook::copy_string(0x1430B8358_g, "http://%s:%d/auth/");
+
+			utils::hook::set<uint32_t>(0x141EC4AC0_g, 0xC3D08948); // Skip publisher file signature stuff
+			utils::hook::call(0x141EC44FC_g, get_ffotd_name); // Return unlocalized ffotd name
+			utils::hook::set<uint64_t>(0x141F04500_g, 0xC300000001B8); // Kill LPC_File_SafeWrite
+			utils::hook::set<uint64_t>(0x141F03130_g, 0xC300000001B8); // Kill LPC_DeleteStale
+
+			utils::hook::set<uint8_t>(0x141E0AA1B_g, 0xEB); // Release un-handled reportReward spamming loop
+
+			localized_strings::override("MENU_CONNECTING_DW", "Emulating Online Service");
 		}
 
 		void pre_destroy() override

@@ -1,7 +1,8 @@
 #include "string.hpp"
-#include <sstream>
-#include <cstdarg>
 #include <algorithm>
+#include <cassert>
+#include <cstdarg>
+#include <sstream>
 
 #include "nt.hpp"
 
@@ -36,9 +37,9 @@ namespace utils::string
 
 	std::string to_lower(std::string text)
 	{
-		std::transform(text.begin(), text.end(), text.begin(), [](const char input)
+		std::transform(text.begin(), text.end(), text.begin(), [](const unsigned char input)
 		{
-			return static_cast<char>(tolower(input));
+			return static_cast<char>(std::tolower(input));
 		});
 
 		return text;
@@ -46,9 +47,9 @@ namespace utils::string
 
 	std::string to_upper(std::string text)
 	{
-		std::transform(text.begin(), text.end(), text.begin(), [](const char input)
+		std::transform(text.begin(), text.end(), text.begin(), [](const unsigned char input)
 		{
-			return static_cast<char>(toupper(input));
+			return static_cast<char>(std::toupper(input));
 		});
 
 		return text;
@@ -63,6 +64,17 @@ namespace utils::string
 	{
 		if (substring.size() > text.size()) return false;
 		return std::equal(substring.rbegin(), substring.rend(), text.rbegin());
+	}
+
+	bool is_numeric(const std::string& text)
+	{
+		auto it = text.begin();
+		while (it != text.end() && std::isdigit(static_cast<unsigned char>(*it)))
+		{
+			++it;
+		}
+
+		return !text.empty() && it == text.end();
 	}
 
 	std::string dump_hex(const std::string& data, const std::string& separator)
@@ -105,13 +117,14 @@ namespace utils::string
 		return {};
 	}
 
-	void strip(const char* in, char* out, int max)
+	void strip(const char* in, char* out, size_t max)
 	{
+		assert(max);
 		if (!in || !out) return;
 
 		max--;
-		auto current = 0;
-		while (*in != 0 && current < max)
+		size_t current = 0;
+		while (*in != '\0' && current < max)
 		{
 			const auto color_index = (*(in + 1) - 48) >= 0xC ? 7 : (*(in + 1) - 48);
 
@@ -128,11 +141,29 @@ namespace utils::string
 
 			++in;
 		}
+
 		*out = '\0';
 	}
 
-#pragma warning(push)
-#pragma warning(disable: 4100)
+	void strip_material(const char* in, char* out, size_t max)
+	{
+		assert(max);
+		if (!in || !out) return;
+
+		size_t i = 0;
+		while (*in != '\0' && i < max - 1)
+		{
+			if (*in != '$' && *in != '{' && *in != '}')
+			{
+				*out++ = *in;
+				++i;
+			}
+			++in;
+		}
+
+		*out = '\0';
+	}
+
 	std::string convert(const std::wstring& wstr)
 	{
 		std::string result;
@@ -158,7 +189,6 @@ namespace utils::string
 
 		return result;
 	}
-#pragma warning(pop)
 
 	std::string replace(std::string str, const std::string& from, const std::string& to)
 	{
@@ -175,5 +205,54 @@ namespace utils::string
 		}
 
 		return str;
+	}
+
+	std::string& ltrim(std::string& str)
+	{
+		str.erase(str.begin(), std::find_if(str.begin(), str.end(), [](const unsigned char input)
+		{
+			return !std::isspace(input);
+		}));
+
+		return str;
+	}
+
+	std::string& rtrim(std::string& str)
+	{
+		str.erase(std::find_if(str.rbegin(), str.rend(), [](const  unsigned char input)
+		{
+			return !std::isspace(input);
+		}).base(), str.end());
+
+		return str;
+	}
+
+	void trim(std::string& str)
+	{
+		ltrim(rtrim(str));
+	}
+
+	void copy(char* dest, const size_t max_size, const char* src)
+	{
+		if (!max_size)
+		{
+			return;
+		}
+
+		for (size_t i = 0;; ++i)
+		{
+			if (i + 1 == max_size)
+			{
+				dest[i] = 0;
+				break;
+			}
+
+			dest[i] = src[i];
+
+			if (!src[i])
+			{
+				break;
+			}
+		}
 	}
 }

@@ -2,21 +2,104 @@
 #include "loader/component_loader.hpp"
 #include "scheduler.hpp"
 
+#include "game/game.hpp"
 #include "steam/steam.hpp"
-#include <utils/hook.hpp>
 
-#include "utils/io.hpp"
-#include "utils/string.hpp"
-#include "utils/thread.hpp"
+#include <utils/io.hpp>
+#include <utils/hook.hpp>
+#include <utils/string.hpp>
+#include <utils/thread.hpp>
+
+#include "integrity.hpp"
+
+#include <stack>
 
 #define ProcessDebugPort 7
-#define ProcessDebugObjectHandle 30 // WinXP source says 31?
-#define ProcessDebugFlags 31 // WinXP source says 32?
+#define ProcessDebugObjectHandle 30
+#define ProcessDebugFlags 31
+#define ProcessImageFileNameWin32 43
 
 namespace arxan
 {
+	namespace detail
+	{
+		void* callstack_proxy_addr{nullptr};
+		static thread_local const void* address_to_call{};
+
+		void set_address_to_call(const void* address)
+		{
+			address_to_call = address;
+		}
+	}
+
 	namespace
 	{
+		thread_local std::stack<uint64_t> address_stack{};
+
+		const void* get_address_to_call()
+		{
+			return detail::address_to_call;
+		}
+
+		void store_address(const uint64_t address)
+		{
+			address_stack.push(address);
+		}
+
+		uint64_t get_stored_address()
+		{
+			const auto res = address_stack.top();
+			address_stack.pop();
+
+			return res;
+		}
+
+		void callstack_return_stub(utils::hook::assembler& a)
+		{
+			a.push(rax);
+			a.pushad64();
+
+			a.call_aligned(get_stored_address);
+			a.mov(qword_ptr(rsp, 0x80), rax);
+
+			a.popad64();
+
+			a.add(rsp, 8);
+
+			a.jmp(qword_ptr(rsp, -8));
+		}
+
+		uint64_t get_callstack_return_stub()
+		{
+			const auto placeholder = game::select(0x140001056, 0x140101168);
+			utils::hook::set<uint8_t>(placeholder - 2, 0xFF); // fakes a call
+			utils::hook::nop(placeholder, 1);
+			utils::hook::jump(placeholder + 1, utils::hook::assemble(callstack_return_stub));
+
+			return placeholder;
+		}
+
+		void callstack_stub(utils::hook::assembler& a)
+		{
+			a.push(rax);
+
+			a.pushad64();
+			a.call_aligned(get_address_to_call);
+			a.mov(qword_ptr(rsp, 0x80), rax);
+
+			a.mov(rcx, qword_ptr(rsp, 0x88));
+			a.call_aligned(store_address);
+
+			a.mov(rax, get_callstack_return_stub());
+			a.mov(qword_ptr(rsp, 0x88), rax);
+
+			a.popad64();
+
+			a.add(rsp, 8);
+
+			a.jmp(qword_ptr(rsp, -8));
+		}
+
 		constexpr auto pseudo_steam_id = 0x1337;
 		const auto pseudo_steam_handle = reinterpret_cast<HANDLE>(reinterpret_cast<uint64_t>(INVALID_HANDLE_VALUE) -
 			pseudo_steam_id);
@@ -124,6 +207,9 @@ namespace arxan
 				L"x32dbg",
 				L"x64dbg",
 				L"Wireshark",
+				L"Debug",
+				L"DEBUG",
+				L"msvsmon",
 			};
 
 			if (!string.Buffer || !string.Length)
@@ -131,7 +217,7 @@ namespace arxan
 				return false;
 			}
 
-			std::wstring_view path(string.Buffer, string.Length / sizeof(string.Buffer[0]));
+			const std::wstring_view path(string.Buffer, string.Length / sizeof(string.Buffer[0]));
 
 			bool modified = false;
 			for (const auto& keyword : evil_keywords)
@@ -171,7 +257,7 @@ namespace arxan
 			std::string_view str_view(str, length);
 			std::wstring wstr(str_view.begin(), str_view.end());
 
-			if (!remove_evil_keywords_from_string(&wstr[0], wstr.size()))
+			if (!remove_evil_keywords_from_string(wstr.data(), wstr.size()))
 			{
 				return false;
 			}
@@ -188,7 +274,7 @@ namespace arxan
 			std::wstring wstr{};
 			wstr.resize(max_count);
 
-			const auto res = GetWindowTextW(wnd, &wstr[0], max_count);
+			const auto res = GetWindowTextW(wnd, wstr.data(), max_count);
 			if (res)
 			{
 				remove_evil_keywords_from_string(wstr.data(), res);
@@ -310,7 +396,8 @@ namespace arxan
 					*static_cast<HANDLE*>(info) = nullptr;
 					return static_cast<LONG>(0xC0000353);
 				}
-				else if (info_class == ProcessImageFileName || static_cast<int>(info_class) == 43 /* ? */)
+				else if (info_class == ProcessImageFileName || static_cast<int>(info_class) ==
+					ProcessImageFileNameWin32)
 				{
 					remove_evil_keywords_from_string(*static_cast<UNICODE_STRING*>(info));
 				}
@@ -378,6 +465,11 @@ namespace arxan
 			for (auto i = 0u; i < ARRAYSIZE(functions); ++i)
 			{
 				const auto func = ntdll.get_proc<void*>(functions[i]);
+				if (!func)
+				{
+					continue;
+				}
+
 				if (!loaded)
 				{
 					memcpy(buffers[i], func, sizeof(buffer));
@@ -472,13 +564,12 @@ namespace arxan
 		uint32_t adjust_integrity_checksum(const uint64_t return_address, uint8_t* stack_frame,
 		                                   const uint32_t current_checksum)
 		{
-			const auto handler_address = reverse_g(return_address - 5);
+			const auto handler_address = game::derelocate(return_address - 5);
 			const auto* context = search_handler_context(stack_frame, current_checksum);
 
 			if (!context)
 			{
-				MessageBoxA(nullptr, utils::string::va("No frame offset for: %llX", handler_address), "Error",
-				            MB_ICONERROR);
+				game::show_error(utils::string::va("No frame offset for: %llX", handler_address));
 				TerminateProcess(GetCurrentProcess(), 0xBAD);
 				return current_checksum;
 			}
@@ -594,12 +685,41 @@ namespace arxan
 			utils::hook::call(game_address, stub);
 		}
 
+		void search_and_patch_integrity_checks_precomputed()
+		{
+			if (game::is_server())
+			{
+				for (const auto i : intact_integrity_check_blocks_server)
+				{
+					patch_intact_basic_block_integrity_check(reinterpret_cast<void*>(game::relocate(i)));
+				}
+
+				for (const auto i : split_integrity_check_blocks_server)
+				{
+					patch_split_basic_block_integrity_check(reinterpret_cast<void*>(game::relocate(i)));
+				}
+			}
+			else
+			{
+				for (const auto i : intact_integrity_check_blocks)
+				{
+					patch_intact_basic_block_integrity_check(reinterpret_cast<void*>(game::relocate(i)));
+				}
+
+				for (const auto i : split_integrity_check_blocks)
+				{
+					patch_split_basic_block_integrity_check(reinterpret_cast<void*>(game::relocate(i)));
+				}
+			}
+		}
+
 		void search_and_patch_integrity_checks()
 		{
 			// There seem to be 1219 results.
 			// Searching them is quite slow.
 			// Maybe precomputing that might be better?
-			const auto intact_results = "89 04 8A 83 45 ? FF"_sig;
+
+			/*const auto intact_results = "89 04 8A 83 45 ? FF"_sig;
 			const auto split_results = "89 04 8A E9"_sig;
 
 			for (auto* i : intact_results)
@@ -610,7 +730,9 @@ namespace arxan
 			for (auto* i : split_results)
 			{
 				patch_split_basic_block_integrity_check(i);
-			}
+			}*/
+
+			search_and_patch_integrity_checks_precomputed();
 		}
 
 		LONG WINAPI exception_filter(const LPEXCEPTION_POINTERS info)
@@ -684,21 +806,17 @@ namespace arxan
 
 	NTSTATUS zw_terminate_process_stub(const HANDLE process_handle, const NTSTATUS exit_status)
 	{
-		MessageBoxA(nullptr, "TERMINATING", nullptr, 0);
+		game::show_error("TERMINATING");
 		return zw_terminate_process_hook.invoke<NTSTATUS>(process_handle, exit_status);
 	}
 
-	class component final : public component_interface
+	struct component final : generic_component
 	{
-	public:
-		component()
+		void post_load() override
 		{
 			auto* dll_characteristics = &utils::nt::library().get_optional_header()->DllCharacteristics;
 			utils::hook::set<WORD>(dll_characteristics, *dll_characteristics | IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE);
-		}
 
-		void pre_start() override
-		{
 			disable_tls_callbacks();
 			restore_debug_functions();
 
@@ -736,8 +854,8 @@ namespace arxan
 			if (sys_met_import) utils::hook::set(sys_met_import, get_system_metrics_stub);
 
 			// TODO: Remove as soon as real hooking works
-			auto* get_cmd_import = utils::nt::library{}.get_iat_entry("kernel32.dll", "GetCommandLineA");
-			if (get_cmd_import) utils::hook::set(get_cmd_import, get_command_line_a_stub);
+			//auto* get_cmd_import = utils::nt::library{}.get_iat_entry("kernel32.dll", "GetCommandLineA");
+			//if (get_cmd_import) utils::hook::set(get_cmd_import, get_command_line_a_stub);
 
 			//zw_terminate_process_hook.create(ntdll.get_proc<void*>("ZwTerminateProcess"), zw_terminate_process_stub);
 			//zw_terminate_process_hook.move();
@@ -751,11 +869,13 @@ namespace arxan
 		{
 			search_and_patch_integrity_checks();
 			//restore_debug_functions();
+
+			detail::callstack_proxy_addr = utils::hook::assemble(callstack_stub);
 		}
 
-		int priority() override
+		component_priority priority() const override
 		{
-			return 9999;
+			return component_priority::arxan;
 		}
 
 	private:

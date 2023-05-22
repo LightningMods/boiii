@@ -3,7 +3,8 @@
 
 #include "scheduler.hpp"
 
-#include <cassert>
+#include "game/game.hpp"
+
 #include <utils/hook.hpp>
 #include <utils/concurrency.hpp>
 #include <utils/thread.hpp>
@@ -74,8 +75,8 @@ namespace scheduler
 				{
 					new_callbacks_.access([&](task_list& new_tasks)
 					{
-						tasks.insert(tasks.end(), std::move_iterator<task_list::iterator>(new_tasks.begin()),
-						             std::move_iterator<task_list::iterator>(new_tasks.end()));
+						tasks.insert(tasks.end(), std::move_iterator(new_tasks.begin()),
+						             std::move_iterator(new_tasks.end()));
 						new_tasks = {};
 					});
 				});
@@ -83,18 +84,12 @@ namespace scheduler
 		};
 
 		volatile bool kill = false;
-		std::thread thread;
+		std::thread async_thread;
 		task_pipeline pipelines[pipeline::count];
 
 		utils::hook::detour r_end_frame_hook;
-		utils::hook::detour g_run_frame_hook;
 		utils::hook::detour main_frame_hook;
 
-		void execute(const pipeline type)
-		{
-			assert(type >= 0 && type < pipeline::count);
-			pipelines[type].execute();
-		}
 
 		void r_end_frame_stub()
 		{
@@ -102,9 +97,9 @@ namespace scheduler
 			r_end_frame_hook.invoke<void>();
 		}
 
-		void server_frame_stub()
+		void g_clear_vehicle_inputs_stub()
 		{
-			g_run_frame_hook.invoke<void>();
+			game::G_ClearVehicleInputs();
 			execute(pipeline::server);
 		}
 
@@ -113,6 +108,12 @@ namespace scheduler
 			main_frame_hook.invoke<void>();
 			execute(pipeline::main);
 		}
+	}
+
+	void execute(const pipeline type)
+	{
+		assert(type >= 0 && type < pipeline::count);
+		pipelines[type].execute();
 	}
 
 	void schedule(const std::function<bool()>& callback, const pipeline type,
@@ -148,12 +149,11 @@ namespace scheduler
 		}, type, delay);
 	}
 
-	class component final : public component_interface
+	struct component final : generic_component
 	{
-	public:
-		void pre_start() override
+		void post_load() override
 		{
-			thread = utils::thread::create_named_thread("Async Scheduler", []()
+			async_thread = utils::thread::create_named_thread("Async Scheduler", []()
 			{
 				while (!kill)
 				{
@@ -165,17 +165,24 @@ namespace scheduler
 
 		void post_unpack() override
 		{
-			r_end_frame_hook.create(0x142273560_g, r_end_frame_stub);	// some func called before R_EndFrame, maybe SND_EndFrame?
-			g_run_frame_hook.create(0x14065C360_g, server_frame_stub);	// GlassSv_Update
-			main_frame_hook.create(0x1420F9860_g, main_frame_stub);		// Com_Frame_Try_Block_Function
+			if (!game::is_server())
+			{
+				// some func called before R_EndFrame, maybe SND_EndFrame?
+				r_end_frame_hook.create(0x142272B00_g, r_end_frame_stub);
+			}
+
+			// Com_Frame_Try_Block_Function
+			main_frame_hook.create(game::select(0x1420F8E00, 0x1405020E0), main_frame_stub);
+
+			utils::hook::call(game::select(0x14225522E, 0x140538427), g_clear_vehicle_inputs_stub);
 		}
 
 		void pre_destroy() override
 		{
 			kill = true;
-			if (thread.joinable())
+			if (async_thread.joinable())
 			{
-				thread.join();
+				async_thread.join();
 			}
 		}
 	};
