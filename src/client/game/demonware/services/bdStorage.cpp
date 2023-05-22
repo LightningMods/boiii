@@ -4,7 +4,9 @@
 #include <utils/nt.hpp>
 #include <utils/io.hpp>
 #include <utils/cryptography.hpp>
+#include <utils/compression.hpp>
 
+#include "resource.hpp"
 #include "game/game.hpp"
 
 namespace demonware
@@ -13,13 +15,17 @@ namespace demonware
 	{
 		this->register_task(20, &bdStorage::list_publisher_files);
 		this->register_task(21, &bdStorage::get_publisher_file);
-		this->register_task(24, &bdStorage::set_user_file);
-		this->register_task(16, &bdStorage::get_user_file);
+		this->register_task(24, &bdStorage::upload_files);
+		this->register_task(16, &bdStorage::get_files);
 		this->register_task(12, &bdStorage::unk12);
+		this->register_task(10, &bdStorage::set_user_file);
 
-		//this->map_publisher_resource("motd-.*\\.txt", DW_MOTD);
-		// this->map_publisher_resource("ffotd-.*\\.ff", DW_FASTFILE);
-		//this->map_publisher_resource("playlists(_.+)?\\.aggr", DW_PLAYLISTS);
+		this->map_publisher_resource("motd-.*\\.gz", DW_MOTD);
+		this->map_publisher_resource("playlists(_.+)?\\.gz", DW_PLAYLISTS);
+		this->map_publisher_resource("featured_cards(.+)?\\.gz", DW_CARDS);
+		this->map_publisher_resource(".*ffotd.*\\.ff", DW_FASTFILE);
+		this->map_publisher_resource("keys\\.txt", DW_KEYS);
+		this->map_publisher_resource("qosconfig4\\.csv", DW_QOSCONFIG);
 	}
 
 	void bdStorage::map_publisher_resource(const std::string& expression, const INT id)
@@ -51,6 +57,11 @@ namespace demonware
 				else
 				{
 					buffer = std::get<callback>(resource.second)();
+				}
+
+				if (utils::string::ends_with(name, ".gz"))
+				{
+					buffer = utils::compression::zlib::compress(buffer);
 				}
 
 				return true;
@@ -128,12 +139,42 @@ namespace demonware
 		}
 	}
 
-	std::string bdStorage::get_user_file_path(const std::string& name)
+	void bdStorage::set_user_file(service_server* server, byte_buffer* buffer) const
 	{
-		return "players2/user/" + name;
+		bool priv;
+		uint64_t owner;
+		std::string game, filename, data;
+
+		buffer->read_string(&game);
+		buffer->read_string(&filename);
+		buffer->read_bool(&priv);
+		buffer->read_blob(&data);
+		buffer->read_uint64(&owner);
+
+		const auto path = get_user_file_path(filename);
+		utils::io::write_file(path, data);
+
+		auto* info = new bdFileInfo;
+
+		info->file_id = *reinterpret_cast<const uint64_t*>(utils::cryptography::sha1::compute(filename).data());
+		info->filename = filename;
+		info->create_time = uint32_t(time(nullptr));
+		info->modified_time = info->create_time;
+		info->file_size = uint32_t(data.size());
+		info->owner_id = owner;
+		info->priv = priv;
+
+		auto reply = server->create_reply(this->task_id());
+		reply->add(info);
+		reply->send();
 	}
 
-	void bdStorage::set_user_file(service_server* server, byte_buffer* buffer) const
+	std::string bdStorage::get_user_file_path(const std::string& name)
+	{
+		return "players/user/" + name;
+	}
+
+	void bdStorage::upload_files(service_server* server, byte_buffer* buffer) const
 	{
 		uint64_t owner;
 		uint32_t numfiles;
@@ -181,53 +222,68 @@ namespace demonware
 		reply->send();
 	}
 
-	void bdStorage::get_user_file(service_server* server, byte_buffer* buffer) const
+	void bdStorage::get_files(service_server* server, byte_buffer* buffer) const
 	{
-		uint32_t unk32_0;
-		uint32_t numfiles, count = 0;
-		uint64_t owner;
-		std::string game, platform;
+		std::string context;
+		buffer->read_string(&context);
 
-		buffer->read_string(&game);
-		buffer->read_uint32(&unk32_0);
-		buffer->read_uint64(&owner);
-		buffer->read_string(&platform);
-		buffer->read_uint64(&owner);
-		buffer->read_string(&platform);
-		buffer->read_uint32(&numfiles);
+		//printf("demonware: ctx '%s'\n", context.data());
 
-		auto reply = server->create_reply(this->task_id());
+		uint32_t count;
+		buffer->read_uint32(&count);
 
-		for (uint32_t i = 0; i < numfiles; i++)
+		std::vector<std::pair<uint64_t, std::string>> user_ctxs;
+
+		for (auto i = 0u; i < count; i++)
 		{
-			std::string filename, data;
-			buffer->read_string(&filename);
+			uint64_t user_id;
+			std::string acc_type;
+			buffer->read_uint64(&user_id);
+			buffer->read_string(&acc_type);
 
-			const auto path = get_user_file_path(filename);
-			if (!utils::io::read_file(path, &data))
-			{
-#ifndef NDEBUG
-				printf("[DW]: [bdStorage]: get user file: missing file: %s, %s, %s\n", game.data(), filename.data(), platform.data());
-#endif
-				continue;
-			}
-
-			auto response = new bdFile;
-			response->owner_id = owner;
-			response->unk = 0;
-			response->platform = platform;
-			response->filename = filename;
-			response->data = data;
-
-			reply->add(response);
-			++count;
-
-#ifndef NDEBUG
-			printf("[DW]: [bdStorage]: get user file: %s, %s, %s\n", game.data(), filename.data(), platform.data());
-#endif
+			//printf("demonware: user 0x%llX '%s'\n", user_id, acc_type.data());
+			user_ctxs.emplace_back(user_id, acc_type);
 		}
 
-		if (count == numfiles)
+		buffer->read_uint32(&count);
+
+		std::vector<std::string> filenames;
+
+		for (auto i = 0u; i < count; i++)
+		{
+			std::string filename;
+			buffer->read_string(&filename);
+			//printf("demonware: file '%s'\n", filename.data());
+
+			filenames.push_back(std::move(filename));
+		}
+
+		auto reply = server->create_reply(this->task_id());
+		uint32_t available = 0;
+
+		for (size_t i = 0u; i < filenames.size(); i++)
+		{
+			auto& name = filenames.at(i);
+			std::string filedata;
+			if (utils::io::read_file(get_user_file_path(name), &filedata))
+			{
+				auto* entry = new bdFileQueryResult;
+				entry->user_id = user_ctxs.at(i).first;
+				entry->platform = user_ctxs.at(i).second;
+				entry->filename = filenames.at(i);
+				entry->errorcode = 0;
+				entry->filedata = filedata;
+				reply->add(entry);
+				available++;
+				//std::cout << "demonware: user file '" << name << "' dispatched.\n";
+			}
+			else
+			{
+				//std::cout << "demonware: user file '" << name << "' not found.\n";
+			}
+		}
+
+		if (available == count)
 		{
 			reply->send();
 		}

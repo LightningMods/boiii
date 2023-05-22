@@ -21,7 +21,7 @@ namespace console
 		void print_message(const char* message)
 		{
 #ifndef NDEBUG
-			//OutputDebugStringA(message);
+			OutputDebugStringA(message);
 #endif
 
 			if (started && !terminate_runner)
@@ -160,6 +160,8 @@ namespace console
 	public:
 		void post_unpack() override
 		{
+			utils::hook::set<uint8_t>(0x14133D2FE_g, 0xEB); // Always enable ingame console
+
 			//utils::hook::jump(0x1423337F0_g, print_message);
 			//utils::hook::jump(0x142333660_g, print_message);
 
