@@ -4,6 +4,7 @@
 #include "resource.hpp"
 
 #include "game/game.hpp"
+#include "scheduler.hpp"
 
 #include <utils/thread.hpp>
 #include <utils/hook.hpp>
@@ -52,9 +53,15 @@ namespace console
 			});
 		}
 
+		bool is_headless()
+		{
+			static const auto headless = utils::flags::has_flag("headless");
+			return headless;
+		}
+
 		void print_message_to_console(const char* message)
 		{
-			if (game::is_headless())
+			if (is_headless())
 			{
 				fputs(message, stdout);
 				return;
@@ -126,7 +133,7 @@ namespace console
 
 		void sys_create_console_stub(const HINSTANCE h_instance)
 		{
-			if (game::is_headless())
+			if (is_headless())
 			{
 				return;
 			}
@@ -231,7 +238,7 @@ namespace console
 
 	void set_title(const std::string& title)
 	{
-		if (game::is_headless())
+		if (is_headless())
 		{
 			SetConsoleTitleA(title.data());
 		}
@@ -245,7 +252,7 @@ namespace console
 	{
 		component()
 		{
-			if (game::is_headless())
+			if (is_headless())
 			{
 				if (!AttachConsole(ATTACH_PARENT_PROCESS))
 				{
@@ -267,7 +274,6 @@ namespace console
 			if (!game::is_server())
 			{
 				utils::hook::set<uint8_t>(0x14133D2FE_g, 0xEB); // Always enable ingame console
-				utils::hook::jump(0x141344E44_g, 0x141344E2E_g); // Remove the need to type '\' or '/' to send a console command
 
 				if (utils::nt::is_wine() && !utils::flags::has_flag("console"))
 				{

@@ -16,8 +16,6 @@ namespace utils::properties
 {
 	namespace
 	{
-		extern "C" void migrate_if_needed();
-
 		typedef rapidjson::EncodedOutputStream<rapidjson::UTF8<>, rapidjson::FileWriteStream> OutputStream;
 		typedef rapidjson::EncodedInputStream<rapidjson::UTF8<>, rapidjson::FileReadStream> InputStream;
 
@@ -29,21 +27,7 @@ namespace utils::properties
 
 		std::filesystem::path get_properties_file()
 		{
-			static auto props = []
-			{
-				auto path = std::filesystem::path("boiii_players/properties.json");
-				const auto legacy_path = get_properties_folder() / "properties.json";
-
-				migrate_if_needed();
-
-				if (io::file_exists(legacy_path) && !io::file_exists(path))
-				{
-					std::error_code e;
-					std::filesystem::copy(legacy_path, path, std::filesystem::copy_options::skip_existing, e);
-				}
-
-				return path;
-			}();
+			static auto props = get_properties_folder() / "properties.json";
 			return props;
 		}
 

@@ -1,39 +1,57 @@
-![license](https://img.shields.io/github/license/momo5502/boiii.svg)
-[![build](https://github.com/momo5502/boiii/workflows/Build/badge.svg)](https://github.com/momo5502/boiii/actions)
-[![paypal](https://img.shields.io/badge/PayPal-support-blue.svg?logo=paypal)](https://paypal.me/momo5502)
+[![build](https://img.shields.io/github/actions/workflow/status/meow6969/free-boiii/build.yml?branch=main&label=Build&logo=github)](https://github.com/meow6969/free-boiii/actions)
+[![bugs](https://img.shields.io/github/issues/momo5502/boiii/bug?label=Bugs)](https://github.com/momo5502/boiii/issues?q=is%3Aissue+is%3Aopen+label%3Abug)
 
+# BOIII ☄️ nnnyyyyaaaaaaaaaaaaa :3
 
-# BOIII ☄️
+Reverse engineering and analysis of Call of Duty: Black Ops 3.
+67tyofgclk6ryiokfc c6iorfky6yrofkl7 cr6iyrftokcr6yiktfgrc yi67tkgyftkihyfigkfykt
 
-Reverse engineering and analysis of Call of Duty: Black Ops 3. Very experimental.
+if uwant download free game :3 jus goi to release!!!!!!!! https://github.com/meow6969/free-boiii/releases <<<< free game :3 !!!!!!!
 
-<img src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQeSXYzQITJrcjiifN1nqX1fsVE7VwLZ3vl2g&usqp=CAU">
+<img src="https://meow6969.github.io/moew/peakbulgarian.jpg">
+
+nyooo u canot do dis !! do not free game >:( !!!!!
+
+<img src="https://meow6969.github.io/moew/cirnotalking.gif">
+
+hehe m,e whjen fre game :3
+nooo y rt some my gif not work ing :((((((( ic ry 
+<img src="https://meow6969.github.io/moew/imdanicing.gif">
+
+hehaa
+
+<img src="https://meow6969.github.io/moew/haha.gif">
+
+cionputr
+
+<img src="https://meow6969.github.io/moew/pythoncomputer.gif">
 
 ## Roadmap
 
 - [x] Steam API Emulation
 - [x] Steam Integrity Bypass
 - [x] Offline Multiplayer/Zombies/Campaign Support
-- [x] RE Tool Detection Bypass (IDA Pro, HxD, ...)
+- [x] RE Tool Detection Bypass (only the ones I use: IDA Pro, HxD, Wireshark)
 - [x] Disable Hardware Breakpoint Detection
 - [x] Disable Integrity Checks
-- [ ] Demonware Emulation
-- [ ] Disable Anti-Debugging Mechanisms
+- [x] Demonware Emulation
+- [x] Process wrapper
+- [x] P2P multiplayer
+- [x] Dedicated Servers
 
-## Download
+## Writeups & Articles
 
-Unzip <a href="https://nightly.link/momo5502/boiii/workflows/build/main/Release%20Binary.zip">this</a> into your BOIII folder and run the BlackOps3.exe
+- <a href="https://momo5502.com/posts/2022-11-17-reverse-engineering-integrity-checks-in-black-ops-3/">Reverse engineering integrity checks in Black Ops 3</a>
+- <a href="https://techcrunch.com/2023/02/28/gamers-are-fixing-a-video-game-taken-over-by-hackers/">Gamers are fixing a video game ‘taken over’ by hackers</a>
 
-## Compile from source
+## Credits
 
-- Clone the Git repo. Do NOT download it as ZIP, that won't work.
-- Update the submodules and run `premake5 vs2022` or simply use the delivered `generate.bat`.
-- Build via solution file in `build\boiii.sln`.
+- Thanks to <a href="https://github.com/shiversoftdev">@shiversoftdev</a> for providing the fixes from his <a href="https://github.com/shiversoftdev/t7patch">community patch</a>
 
 ## Disclaimer
 
 This software has been created purely for the purposes of
-academic research. It is not intended to be used to harm
+free game. It is not intended to be used to harm
 others. Project maintainers are not responsible or
 liable for misuse of the software. Use responsibly.
 

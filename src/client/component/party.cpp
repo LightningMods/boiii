@@ -42,7 +42,7 @@ namespace party
 		{
 			auth::clear_stored_guids();
 
-			workshop::setup_same_mod_as_host(usermap_id, mod_id);
+			workshop::load_mod_if_needed(usermap_id, mod_id);
 
 			game::XSESSION_INFO info{};
 			game::CL_ConnectFromLobby(0, &info, &addr, 1, 0, mapname.data(), gamemode.data(), usermap_id.data());
@@ -54,7 +54,7 @@ namespace party
 			{
 				const auto local_client = *reinterpret_cast<DWORD*>(0x14342155C_g);
 				const auto current_mode = game::Com_SessionMode_GetMode();
-				game::Com_SwitchMode(local_client, static_cast<game::eModes>(current_mode), mode, 6);
+				game::Com_SwitchMode(local_client, current_mode, mode, 6);
 			}, scheduler::main);
 		}
 
@@ -189,7 +189,7 @@ namespace party
 				return;
 			}
 
-			const auto mod_id = info.get("modId");
+			const auto mod_id = info.get("fs_game");
 
 			//const auto hostname = info.get("sv_hostname");
 			const auto playmode = info.get("playmode");

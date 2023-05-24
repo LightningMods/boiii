@@ -1,6 +1,6 @@
 #pragma once
 
-#define PROTOCOL 7
+#define PROTOCOL 4
 #define SUB_PROTOCOL 1
 
 #ifdef __cplusplus
@@ -10,25 +10,13 @@ namespace game
 
 	enum ControllerIndex_t
 	{
-		INVALID_CONTROLLER_PORT = -1,
+		INVALID_CONTROLLER_PORT = 0xFFFFFFFF,
 		CONTROLLER_INDEX_FIRST = 0x0,
 		CONTROLLER_INDEX_0 = 0x0,
 		CONTROLLER_INDEX_1 = 0x1,
 		CONTROLLER_INDEX_2 = 0x2,
 		CONTROLLER_INDEX_3 = 0x3,
 		CONTROLLER_INDEX_COUNT = 0x4,
-	};
-
-	enum LocalClientNum_t
-	{
-		INVALID_LOCAL_CLIENT = -1,
-		LOCAL_CLIENT_0 = 0x0,
-		LOCAL_CLIENT_FIRST = 0x0,
-		LOCAL_CLIENT_KEYBOARD_AND_MOUSE = 0x0,
-		LOCAL_CLIENT_1 = 0x1,
-		LOCAL_CLIENT_2 = 0x2,
-		LOCAL_CLIENT_3 = 0x3,
-		LOCAL_CLIENT_COUNT = 0x4,
 	};
 
 	enum eGameModes
@@ -634,43 +622,6 @@ namespace game
 		void* errorData;
 	};
 
-	enum connstate_t
-	{
-		CA_DISCONNECTED = 0x0,
-		CA_CINEMATIC = 0x1,
-		CA_UICINEMATIC = 0x2,
-		CA_LOGO = 0x3,
-		CA_CONNECTING = 0x4,
-		CA_CHALLENGING = 0x5,
-		CA_CONFIRMLOADING = 0x6,
-		CA_CONNECTED = 0x7,
-		CA_SENDINGDATA = 0x8,
-		CA_LOADING = 0x9,
-		CA_PRIMED = 0xA,
-		CA_ACTIVE = 0xB,
-	};
-
-	struct clientUIActive_t
-	{
-		int flags;
-		int keyCatchers;
-		connstate_t connectionState;
-		unsigned char __pad0[0x106C];
-	};
-
-	static_assert(sizeof(clientUIActive_t) == 0x1078);
-
-	struct clientActive_t
-	{
-		char __pad0[0xB8C8];
-		float viewangles[3];
-		char __pad1[0x18C15C];
-	};
-
-	static_assert(sizeof(clientActive_t) == 0x197A30);
-
-	typedef void* fileHandle_t;
-
 	typedef uint32_t dvarStrHash_t;
 
 	enum dvarType_t
@@ -939,7 +890,7 @@ namespace game
 
 	enum LobbyType
 	{
-		LOBBY_TYPE_INVALID = -1,
+		LOBBY_TYPE_INVALID = 0xFFFFFFFF,
 		LOBBY_TYPE_PRIVATE = 0x0,
 		LOBBY_TYPE_GAME = 0x1,
 		LOBBY_TYPE_TRANSITION = 0x2,
@@ -949,17 +900,9 @@ namespace game
 		LOBBY_TYPE_AUTO = 0x3,
 	};
 
-	enum LobbyClientType
-	{
-		LOBBY_CLIENT_TYPE_INVALID = -1,
-		LOBBY_CLIENT_TYPE_ALL = 0x0,
-		LOBBY_CLIENT_TYPE_LOCAL = 0x1,
-		LOBBY_CLIENT_TYPE_REMOTE = 0x2,
-	};
-
 	enum LobbyNetworkMode
 	{
-		LOBBY_NETWORKMODE_INVALID = -1,
+		LOBBY_NETWORKMODE_INVALID = 0xFFFFFFFF,
 		LOBBY_NETWORKMODE_LOCAL = 0x0,
 		LOBBY_NETWORKMODE_LAN = 0x1,
 		LOBBY_NETWORKMODE_LIVE = 0x2,
@@ -968,7 +911,7 @@ namespace game
 
 	enum LobbyMainMode
 	{
-		LOBBY_MAINMODE_INVALID = -1,
+		LOBBY_MAINMODE_INVALID = 0xFFFFFFFF,
 		LOBBY_MAINMODE_CP = 0x0,
 		LOBBY_MAINMODE_MP = 0x1,
 		LOBBY_MAINMODE_ZM = 0x2,
@@ -1190,8 +1133,8 @@ namespace game
 
 		enum HksObjectType
 		{
-			TANY = -1,
-			TNONE = -1,
+			TANY = 0xFFFFFFFE,
+			TNONE = 0xFFFFFFFF,
 			TNIL = 0x0,
 			TBOOLEAN = 0x1,
 			TLIGHTUSERDATA = 0x2,
@@ -1636,19 +1579,9 @@ namespace game
 		SV_CMD_RELIABLE_0 = 0x1,
 	};
 
-	enum
-	{
-		CS_FREE = 0x0,
-		CS_ZOMBIE = 0x1,
-		CS_RECONNECTING = 0x2,
-		CS_CONNECTED = 0x3,
-		CS_CLIENTLOADING = 0x4,
-		CS_ACTIVE = 0x5,
-	};
-
 	struct client_s
 	{
-		int state;
+		int client_state;
 		char __pad0[0x28];
 		netadr_t address;
 		char __pad1[20468];
@@ -1666,6 +1599,7 @@ namespace game
 		int serverId;
 		char __pad6[171432];
 	};
+
 
 #ifdef __cplusplus
 	static_assert(sizeof(client_s) == 0xE5110);
@@ -1685,44 +1619,6 @@ namespace game
 	static_assert(sizeof(client_s_cl) == 0xE5170);
 #endif
 
-	union Weapon
-	{
-		struct
-		{
-			uint64_t weaponIdx : 9;
-			uint64_t attachment1 : 6;
-			uint64_t attachment2 : 6;
-			uint64_t attachment3 : 6;
-			uint64_t attachment4 : 6;
-			uint64_t attachment5 : 6;
-			uint64_t attachment6 : 6;
-			uint64_t attachment7 : 6;
-			uint64_t attachment8 : 6;
-			uint64_t padding : 7;
-		} _anon_0;
-		uint64_t weaponData;
-	};
-
-	union EntRefUnion
-	{
-		int32_t entnum;
-		uint32_t hudElemIndex;
-		uint32_t pathNodeIndex;
-		short vehicleNodeIndex;
-		unsigned short absDynEntIndex;
-		Weapon weapon;
-		uint64_t val;
-	};
-
-	struct scr_entref_t
-	{
-		EntRefUnion u;
-		unsigned short classnum;
-		LocalClientNum_t client;
-	};
-
-	static_assert(sizeof(scr_entref_t) == 0x10);
-
 	enum scriptInstance_t
 	{
 		SCRIPTINSTANCE_SERVER = 0x0,
@@ -1741,23 +1637,14 @@ namespace game
 	struct EntityState
 	{
 		int number;
-	}; // Incomplete
+	};
 
 	struct gentity_s
 	{
 		EntityState s;
 		unsigned char __pad0[0x24C];
 		gclient_s* client;
-		unsigned char __pad1[0x17C];
-		struct
-		{
-			unsigned int notifyString;
-			unsigned int index;
-			unsigned char stoppable;
-			int basetime;
-			int duration;
-		} snd_wait;
-		unsigned char __pad2[0x110];
+		unsigned char __pad1[0x2A0];
 	};
 
 #ifdef __cplusplus

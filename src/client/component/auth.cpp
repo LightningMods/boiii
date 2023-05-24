@@ -25,8 +25,6 @@ namespace auth
 {
 	namespace
 	{
-		const game::dvar_t* password;
-
 		std::array<uint64_t, 18> client_xuids{};
 
 		std::string get_hdd_serial()
@@ -98,7 +96,7 @@ namespace auth
 		{
 			static const auto is_first = []
 			{
-				static utils::nt::handle mutex = CreateMutexA(nullptr, FALSE, "boiii_mutex");
+				static utils::nt::handle<> mutex = CreateMutexA(nullptr, FALSE, "boiii_mutex");
 				return mutex && GetLastError() != ERROR_ALREADY_EXISTS;
 			}();
 
@@ -108,11 +106,6 @@ namespace auth
 		std::string serialize_connect_data(const char* data, const int length)
 		{
 			utils::byte_buffer buffer{};
-			buffer.write_string(get_key().serialize(PK_PUBLIC));
-
-			const std::string challenge(reinterpret_cast<const char*>(0x15A8A7F10_g), 32);
-			buffer.write_string(utils::cryptography::ecc::sign_message(get_key(), challenge));
-
 			profile_infos::get_profile_info().value_or(profile_infos::profile_info{}).serialize(buffer);
 
 			buffer.write_string(data, static_cast<size_t>(length));
@@ -134,9 +127,9 @@ namespace auth
 
 				const auto& fragment_packet = packet_buffer.get_buffer();
 
-				game::NET_OutOfBandData(sock, adr,
-				                        fragment_packet.data(),
-				                        static_cast<int>(fragment_packet.size()));
+				game::NET_OutOfBandData(
+					sock, adr, fragment_packet.data(),
+					static_cast<int>(fragment_packet.size()));
 			});
 		}
 
@@ -217,24 +210,6 @@ namespace auth
 		void dispatch_connect_packet(const game::netadr_t& target, const std::string& data)
 		{
 			utils::byte_buffer buffer(data);
-
-			utils::cryptography::ecc::key key{};
-			key.deserialize(buffer.read_string());
-
-			std::string challenge{};
-			challenge.resize(32);
-
-			const auto get_challenge = reinterpret_cast<void(*)(const game::netadr_t*, void*, size_t)>(game::select(
-				0x1412E15E0, 0x14016DDC0));
-			get_challenge(&target, challenge.data(), challenge.size());
-
-			if (!utils::cryptography::ecc::verify_message(key, challenge, buffer.read_string()) && target.type !=
-				game::NA_LOOPBACK)
-			{
-				network::send(target, "error", "Bad signature");
-				return;
-			}
-
 			const profile_infos::profile_info info(buffer);
 
 			const auto connect_data = buffer.read_string();
@@ -249,11 +224,6 @@ namespace auth
 
 			const utils::info_string info_string(params[1]);
 			const auto xuid = strtoull(info_string.get("xuid").data(), nullptr, 16);
-			if (xuid != key.get_hash())
-			{
-				network::send(target, "error", "Bad XUID");
-				return;
-			}
 
 			profile_infos::add_and_distribute_profile_info(target, xuid, info);
 
@@ -354,22 +324,6 @@ namespace auth
 		}
 	}
 
-	void info_set_value_for_key_stub(char* s, const char* key, const char* value)
-	{
-		game::Info_SetValueForKey(s, key, value);
-
-		if (password && *password->current.value.string)
-		{
-			game::Info_SetValueForKey(s, "password", password->current.value.string);
-		}
-
-		const auto* clan_abbrev = game::LiveStats_GetClanTagText(0);
-		if (*clan_abbrev)
-		{
-			game::Info_SetValueForKey(s, "clanAbbrev", clan_abbrev);
-		}
-	}
-
 	struct component final : generic_component
 	{
 		void post_unpack() override
@@ -381,11 +335,6 @@ namespace auth
 
 			// Intercept SV_DirectConnect in SV_AddTestClient
 			utils::hook::call(game::select(0x1422490DC, 0x14052E582), direct_connect_bots_stub);
-
-			scheduler::once([]
-			{
-				password = game::register_dvar_string("password", "", game::DVAR_USERINFO, "password");
-			}, scheduler::pipeline::main);
 
 			// Patch steam id bit check
 			std::vector<std::pair<size_t, size_t>> patches{};
@@ -434,10 +383,8 @@ namespace auth
 
 				utils::hook::call(0x14134BF7D_g, send_connect_data_stub);
 
-				utils::hook::call(0x14134BEFE_g, info_set_value_for_key_stub);
-
 				// Fix crash
-				utils::hook::set<uint8_t>(0x14134B970_g, 0xC3);
+				utils::hook::nop(0x142249097_g, 5);
 			}
 
 			for (const auto& patch : patches)

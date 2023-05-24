@@ -78,9 +78,10 @@ newoption {
 }
 
 newoption {
-	trigger = "ci-build",
-	description = "Enable CI builds of the client."
+	trigger = "no-check",
+	description = "Disable ownership checks."
 }
+
 
 newaction {
 	trigger = "version",
@@ -97,7 +98,7 @@ newaction {
 		local gitCurrentBranchSuccess = proc:close()
 		if gitCurrentBranchSuccess then
 			-- We got a branch name, check if it is a feature branch
-			if gitCurrentBranchOutput ~= "develop" and gitCurrentBranchOutput ~= "master" then
+			if gitCurrentBranchOutput ~= "develop" and gitCurrentBranchOutput ~= "master" and gitCurrentBranchOutput ~= "main" then
 				version = version .. "-" .. gitCurrentBranchOutput
 			end
 		end
@@ -248,8 +249,12 @@ workspace "boiii"
 	if _OPTIONS["dev-build"] then
 		defines {"DEV_BUILD"}
 	end
+	
+	if _OPTIONS["no-check"] then
+		defines {"NO_CHECK"}
+	end
 
-	if _OPTIONS["ci-build"] then
+	if os.getenv("CI") then
 		defines {"CI"}
 	end
 
@@ -262,7 +267,7 @@ workspace "boiii"
 	filter "configurations:Release"
 		optimize "Size"
 		buildoptions {"/GL"}
-		linkoptions { "/IGNORE:4702", "/LTCG" }
+		linkoptions {"/IGNORE:4702", "/LTCG"}
 		defines {"NDEBUG"}
 		flags {"FatalCompileWarnings"}
 	filter {}
@@ -285,10 +290,10 @@ project "common"
 	dependencies.imports()
 
 project "client"
-	kind "SharedLib"
+	kind "WindowedApp"
 	language "C++"
 
-	targetname "d3d11"
+	targetname "boiii"
 
 	pchheader "std_include.hpp"
 	pchsource "src/client/std_include.cpp"
@@ -299,7 +304,7 @@ project "client"
 
 	resincludedirs {"$(ProjectDir)src"}
 
-	dependson {"tlsdll", "runner"}
+	dependson {"tlsdll"}
 
 	links {"common"}
 
@@ -310,6 +315,30 @@ project "client"
 	end
 
 	dependencies.imports()
+
+project "tlsdll"
+	kind "SharedLib"
+	language "C++"
+
+	symbols 'Off'
+	exceptionhandling "Off"
+
+	flags {"NoRuntimeChecks", "NoBufferSecurityCheck",  "OmitDefaultLibrary"}
+
+	buildoptions {"/Zc:threadSafeInit-"}
+	linkoptions {"/NODEFAULTLIB", "/IGNORE:4210"}
+
+	removebuildoptions {"/GL"}
+	removelinkoptions {"/LTCG"}
+
+	files {"./src/tlsdll/**.rc", "./src/tlsdll/**.hpp", "./src/tlsdll/**.cpp", "./src/tlsdll/resources/**.*"}
+
+	includedirs {"./src/tlsdll", "%{prj.location}/src"}
+
+	links {"common"}
+
+	resincludedirs {"$(ProjectDir)src"}
+
 
 group "Dependencies"
 	dependencies.projects()

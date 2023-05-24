@@ -17,9 +17,6 @@ local SetButtonState = function(button, state)
 end
 
 local RemoveButton = function(buttonTable, button)
-  if not button then
-    return
-  end
   for id, v in pairs(buttonTable) do
     if buttonTable[id].optionDisplay == button.stringRef then
       table.remove(buttonTable, id)
@@ -34,9 +31,6 @@ local RemoveSpaces = function(buttonTable)
 end
 
 local GetButtonIndex = function(buttonTable, button)
-  if not button then
-    return nil
-  end
   for id, v in pairs(buttonTable) do
     if buttonTable[id].optionDisplay == button.stringRef then
       return id

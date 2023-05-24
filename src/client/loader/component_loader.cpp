@@ -3,8 +3,6 @@
 
 #include <utils/nt.hpp>
 
-#include "game/game.hpp"
-
 namespace component_loader
 {
 	namespace
@@ -74,7 +72,7 @@ namespace component_loader
 			}
 			catch (const std::exception& e)
 			{
-				game::show_error(e.what());
+				MessageBoxA(nullptr, e.what(), "Error", MB_ICONERROR | MB_SETFOREGROUND | MB_TOPMOST);
 				return false;
 			}
 
@@ -101,7 +99,7 @@ namespace component_loader
 			}
 			catch (const std::exception& e)
 			{
-				game::show_error(e.what());
+				MessageBoxA(nullptr, e.what(), "Error", MB_ICONERROR | MB_SETFOREGROUND | MB_TOPMOST);
 				return false;
 			}
 
@@ -124,7 +122,7 @@ namespace component_loader
 			}
 			catch (const std::exception& e)
 			{
-				game::show_error(e.what());
+				MessageBoxA(nullptr, e.what(), "Error", MB_ICONERROR | MB_SETFOREGROUND | MB_TOPMOST);
 				return false;
 			}
 
@@ -150,7 +148,7 @@ namespace component_loader
 			}
 			catch (const std::exception& e)
 			{
-				game::show_error(e.what());
+				MessageBoxA(nullptr, e.what(), "Error", MB_ICONERROR | MB_SETFOREGROUND | MB_TOPMOST);
 				return false;
 			}
 

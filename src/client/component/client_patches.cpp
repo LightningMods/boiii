@@ -4,10 +4,7 @@
 #include "scheduler.hpp"
 
 #include <game/game.hpp>
-#include <game/utils.hpp>
-
 #include <utils/hook.hpp>
-#include <utils/io.hpp>
 
 #include <mmeapi.h>
 
@@ -16,9 +13,6 @@ namespace client_patches
 	namespace
 	{
 		utils::hook::detour preload_map_hook;
-
-		const game::dvar_t* cl_yaw_speed;
-		const game::dvar_t* cl_pitch_speed;
 
 		void stop_intro_if_needed()
 		{
@@ -43,11 +37,11 @@ namespace client_patches
 			}, scheduler::main, 15s);
 		}
 
-		void preload_map_stub(int local_client_num, const char* mapname, const char* gametype)
+		void preload_map_stub(int localClientNum, const char* mapname, const char* gametype)
 		{
 			game::Com_GametypeSettings_SetGametype(gametype, true);
 			stop_intro_if_needed();
-			preload_map_hook.invoke(local_client_num, mapname, gametype);
+			preload_map_hook.invoke(localClientNum, mapname, gametype);
 		}
 
 		void reduce_process_affinity()
@@ -113,97 +107,11 @@ namespace client_patches
 				utils::hook::call(address, is_mod_loaded_stub);
 			}
 		}
-
-		float cl_key_state_yaw_speed_stub(void* key)
-		{
-			return game::CL_KeyState(key) * cl_yaw_speed->current.value.value;
-		}
-
-		float cl_key_state_pitch_speed_stub(void* key)
-		{
-			return game::CL_KeyState(key) * cl_pitch_speed->current.value.value;
-		}
-
-		game::fileHandle_t fs_f_open_file_write_to_dir_stub(const char* filename, [[maybe_unused]] const char* dir,
-		                                                    const char* os_base_path)
-		{
-			return game::FS_FOpenFileWriteToDir(filename, "boiii_players", os_base_path);
-		}
-
-		game::fileHandle_t fs_f_open_file_read_from_dir_stub(const char* filename, [[maybe_unused]] const char* dir,
-		                                                     const char* os_base_path)
-		{
-			return game::FS_FOpenFileReadFromDir(filename, "boiii_players", os_base_path);
-		}
-
-		int i_stricmp_stub(const char* s0, [[maybe_unused]] const char* s1)
-		{
-			return game::I_stricmp(s0, "boiii_players");
-		}
-
-		void fs_add_game_directory_stub(const char* path, [[maybe_unused]] const char* dir)
-		{
-			utils::hook::invoke<void>(0x1422A2AF0_g, path, "boiii_players");
-		}
-
-		// TODO: Remove me after some time
-		extern "C" void migrate_if_needed()
-		{
-			std::error_code e;
-
-			// Folder does not exist. Nothing to migrate
-			if (!std::filesystem::is_directory("players", e))
-			{
-				return;
-			}
-
-			// Folder does exist. Already migrated
-			if (std::filesystem::is_directory("boiii_players", e))
-			{
-				return;
-			}
-
-			utils::io::create_directory("boiii_players");
-
-			std::filesystem::copy("players", "boiii_players", std::filesystem::copy_options::recursive, e);
-		}
-
-		void patch_players_folder_name()
-		{
-			// Override 'players' folder
-			utils::hook::call(0x14134764F_g, fs_f_open_file_write_to_dir_stub); // ??
-			utils::hook::set<uint8_t>(0x14134762E_g, 0xEB); // ^^
-
-			utils::hook::call(0x1413477EE_g, fs_f_open_file_write_to_dir_stub); // ??
-			utils::hook::set<uint8_t>(0x1413477CD_g, 0xEB); // ^^
-
-			utils::hook::call(0x141C20A1F_g, fs_f_open_file_write_to_dir_stub); // ??
-			utils::hook::set<uint8_t>(0x141C209FE_g, 0xEB); // ^^
-
-			utils::hook::call(0x1422F391E_g, fs_f_open_file_write_to_dir_stub); // ??
-
-			utils::hook::call(0x141C2090F_g, fs_f_open_file_read_from_dir_stub); // ??
-			utils::hook::set<uint8_t>(0x141C208EE_g, 0xEB); // ^^
-
-			utils::hook::call(0x1422F3773_g, fs_f_open_file_read_from_dir_stub); // ??
-
-			utils::hook::call(0x1422A2A61_g, i_stricmp_stub); // ??
-			utils::hook::call(0x1422A2C82_g, i_stricmp_stub); // FS_AddGameDirectory
-
-			utils::hook::call(0x1422A45A4_g, fs_add_game_directory_stub); // FS_Startup
-		}
 	}
 
 	class component final : public client_component
 	{
 	public:
-		static_assert(offsetof(game::clientActive_t, viewangles) == 0xB8C8);
-
-		component()
-		{
-			migrate_if_needed(); // TODO: Remove me after some time
-		}
-
 		void post_unpack() override
 		{
 			fix_amd_cpu_stuttering();
@@ -225,19 +133,6 @@ namespace client_patches
 
 			// Always get loadscreen gametype from s_gametype
 			utils::hook::set<uint8_t>(0x14228F5DC_g, 0xEB);
-
-			cl_yaw_speed = game::register_dvar_float("cl_yawspeed", 140.0f, std::numeric_limits<float>::min(), std::numeric_limits<float>::max(),
-			                                         game::DVAR_NONE, "Max yaw speed in degrees for game pad and keyboard");
-			cl_pitch_speed = game::register_dvar_float("cl_pitchspeed", 140.0f, std::numeric_limits<float>::min(), std::numeric_limits<float>::max(),
-			                                           game::DVAR_NONE, "Max pitch speed in degrees for game pad");
-			// CL_AdjustAngles
-			utils::hook::call(0x1412F3324_g, cl_key_state_yaw_speed_stub); // cl_yawspeed
-			utils::hook::call(0x1412F3344_g, cl_key_state_yaw_speed_stub); // ^^
-
-			utils::hook::call(0x1412F3380_g, cl_key_state_pitch_speed_stub); // cl_pitchspeed
-			utils::hook::call(0x1412F33A1_g, cl_key_state_pitch_speed_stub); // ^^
-
-			patch_players_folder_name();
 		}
 	};
 }

@@ -569,7 +569,8 @@ namespace arxan
 
 			if (!context)
 			{
-				game::show_error(utils::string::va("No frame offset for: %llX", handler_address));
+				MessageBoxA(nullptr, utils::string::va("No frame offset for: %llX", handler_address), "Error",
+				            MB_ICONERROR);
 				TerminateProcess(GetCurrentProcess(), 0xBAD);
 				return current_checksum;
 			}
@@ -806,7 +807,7 @@ namespace arxan
 
 	NTSTATUS zw_terminate_process_stub(const HANDLE process_handle, const NTSTATUS exit_status)
 	{
-		game::show_error("TERMINATING");
+		MessageBoxA(nullptr, "TERMINATING", nullptr, 0);
 		return zw_terminate_process_hook.invoke<NTSTATUS>(process_handle, exit_status);
 	}
 

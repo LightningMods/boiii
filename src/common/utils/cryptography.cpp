@@ -1,8 +1,5 @@
 #include "string.hpp"
 #include "cryptography.hpp"
-
-#include <random>
-
 #include "nt.hpp"
 #include "finally.hpp"
 
@@ -119,18 +116,11 @@ namespace utils::cryptography
 
 				int i[4]; // uninitialized data
 				auto* i_ptr = &i;
-				this->add_entropy(&i, sizeof(i));
-				this->add_entropy(&i_ptr, sizeof(i_ptr));
+				this->add_entropy(reinterpret_cast<uint8_t*>(&i), sizeof(i));
+				this->add_entropy(reinterpret_cast<uint8_t*>(&i_ptr), sizeof(i_ptr));
 
 				auto t = time(nullptr);
-				this->add_entropy(&t, sizeof(t));
-
-				std::random_device rd{};
-				for (auto j = 0; j < 4; ++j)
-				{
-					const auto x = rd();
-					this->add_entropy(&x, sizeof(x));
-				}
+				this->add_entropy(reinterpret_cast<uint8_t*>(&t), sizeof(t));
 			}
 		};
 
@@ -224,7 +214,9 @@ namespace utils::cryptography
 	{
 		this->free();
 
-		if (ecc_import(cs(key.data()), ul(key.size()), &this->key_storage_) != CRYPT_OK)
+		if (ecc_import(cs(key.data()), ul(key.size()),
+		               &this->key_storage_) != CRYPT_OK
+		)
 		{
 			ZeroMemory(&this->key_storage_, sizeof(this->key_storage_));
 		}
@@ -240,7 +232,7 @@ namespace utils::cryptography
 			return {cs(buffer), length};
 		}
 
-		return {};
+		return "";
 	}
 
 	std::string ecc::key::get_openssl() const
@@ -253,17 +245,7 @@ namespace utils::cryptography
 			return {cs(buffer), length};
 		}
 
-		return {};
-	}
-
-	void ecc::key::set_openssl(const std::string& key)
-	{
-		this->free();
-
-		if (ecc_import_openssl(cs(key.data()), ul(key.size()), &this->key_storage_) != CRYPT_OK)
-		{
-			ZeroMemory(&this->key_storage_, sizeof(this->key_storage_));
-		}
+		return "";
 	}
 
 	void ecc::key::free()
@@ -313,14 +295,12 @@ namespace utils::cryptography
 
 	std::string ecc::sign_message(const key& key, const std::string& message)
 	{
-		if (!key.is_valid()) return {};
+		if (!key.is_valid()) return "";
 
 		uint8_t buffer[512];
 		unsigned long length = sizeof(buffer);
 
-		const auto hash = sha512::compute(message);
-
-		ecc_sign_hash(cs(hash.data()), ul(hash.size()), buffer, &length, prng_.get_state(), prng_.get_id(),
+		ecc_sign_hash(cs(message.data()), ul(message.size()), buffer, &length, prng_.get_state(), prng_.get_id(),
 		              &key.get());
 
 		return std::string(cs(buffer), length);
@@ -330,13 +310,11 @@ namespace utils::cryptography
 	{
 		if (!key.is_valid()) return false;
 
-		const auto hash = sha512::compute(message);
-
 		auto result = 0;
 		return (ecc_verify_hash(cs(signature.data()),
 		                        ul(signature.size()),
-		                        cs(hash.data()),
-		                        ul(hash.size()), &result,
+		                        cs(message.data()),
+		                        ul(message.size()), &result,
 		                        &key.get()) == CRYPT_OK && result != 0);
 	}
 
@@ -407,6 +385,7 @@ namespace utils::cryptography
 		{
 			rsa_free(&new_key);
 		});
+
 
 		std::string out_data{};
 		out_data.resize(std::max(ul(data.size() * 3), ul(0x100)));

@@ -87,10 +87,7 @@ end
 local addCustomButtons = function(controller, menuId, buttonTable, isLeader)
   if menuId == LobbyData.UITargets.UI_MPLOBBYMAIN.id then
     utils.RemoveSpaces(buttonTable)
-    local theaterIndex = utils.GetButtonIndex(buttonTable, CoD.LobbyButtons.THEATER_MP)
-    if theaterIndex ~= nil then
-      utils.AddSpacer(buttonTable, theaterIndex - 1)
-    end
+    utils.AddSpacer(buttonTable, utils.GetButtonIndex(buttonTable, CoD.LobbyButtons.THEATER_MP) - 1)
   end
 
   if menuId == LobbyData.UITargets.UI_MPLOBBYONLINE.id or menuId == LobbyData.UITargets.UI_ZMLOBBYONLINE.id then
@@ -124,14 +121,11 @@ local addCustomButtons = function(controller, menuId, buttonTable, isLeader)
 
   if menuId == LobbyData.UITargets.UI_ZMLOBBYONLINE.id then
     utils.RemoveButton(buttonTable, CoD.LobbyButtons.THEATER_ZM)
-    utils.AddLargeButton(controller, buttonTable, CoD.LobbyButtons.THEATER_ZM)
+    utils.AddLargeButton(controller, buttonTable, CoD.LobbyButtons.THEATER_ZM, #buttonTable + 1)
 
     utils.RemoveSpaces(buttonTable)
     utils.AddSpacer(buttonTable, utils.GetButtonIndex(buttonTable, CoD.LobbyButtons.SERVER_BROWSER))
-    local bgbIndex = utils.GetButtonIndex(buttonTable, CoD.LobbyButtons.ZM_BUBBLEGUM_BUFFS)
-    if bgbIndex ~= nil then
-      utils.AddSpacer(buttonTable, bgbIndex - 1)
-    end
+    utils.AddSpacer(buttonTable, utils.GetButtonIndex(buttonTable, CoD.LobbyButtons.ZM_BUBBLEGUM_BUFFS) - 1)
     utils.AddSpacer(buttonTable, utils.GetButtonIndex(buttonTable, CoD.LobbyButtons.STATS))
   end
 end

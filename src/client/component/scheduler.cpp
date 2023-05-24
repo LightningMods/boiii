@@ -84,7 +84,7 @@ namespace scheduler
 		};
 
 		volatile bool kill = false;
-		std::thread async_thread;
+		std::thread thread;
 		task_pipeline pipelines[pipeline::count];
 
 		utils::hook::detour r_end_frame_hook;
@@ -153,7 +153,7 @@ namespace scheduler
 	{
 		void post_load() override
 		{
-			async_thread = utils::thread::create_named_thread("Async Scheduler", []()
+			thread = utils::thread::create_named_thread("Async Scheduler", []()
 			{
 				while (!kill)
 				{
@@ -180,9 +180,9 @@ namespace scheduler
 		void pre_destroy() override
 		{
 			kill = true;
-			if (async_thread.joinable())
+			if (thread.joinable())
 			{
-				async_thread.join();
+				thread.join();
 			}
 		}
 	};

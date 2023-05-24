@@ -47,7 +47,8 @@ namespace
 		const std::string steam_path = steam::SteamAPI_GetSteamInstallPath();
 		if (steam_path.empty() || !::utils::io::file_exists(steam_path + "/steam.exe"))
 		{
-			game::show_error("Steam must be installed for the game to run. Please install Steam!");
+			MessageBoxA(nullptr, "Steam must be installed for the game to run. Please install Steam!", "Error",
+			            MB_ICONERROR);
 			ShellExecuteA(nullptr, "open", "https://store.steampowered.com/about/", nullptr, nullptr, SW_SHOWNORMAL);
 			TerminateProcess(GetCurrentProcess(), 1);
 		}
@@ -249,111 +250,104 @@ namespace
 				"You seem to be using a network share:\n\n" + path.string() + "\n\nNetwork shares are not supported!");
 		}
 	}
-}
 
-int main()
-{
-	if (handle_process_runner())
+	int main()
 	{
-		return 0;
-	}
-
-	FARPROC entry_point{};
-	srand(uint32_t(time(nullptr)) ^ ~(GetTickCount() * GetCurrentProcessId()));
-
-	enable_dpi_awareness();
-
-	{
-		auto premature_shutdown = true;
-		const auto _ = utils::finally([&premature_shutdown]
+		if (handle_process_runner())
 		{
-			if (premature_shutdown)
-			{
-				component_loader::pre_destroy();
-			}
-		});
+			return 0;
+		}
 
-		try
+		FARPROC entry_point{};
+		srand(uint32_t(time(nullptr)) ^ ~(GetTickCount() * GetCurrentProcessId()));
+
+		enable_dpi_awareness();
+
 		{
-			validate_non_network_share();
-			remove_crash_file();
-			updater::update();
-
-			if (!utils::io::file_exists(launcher::get_launcher_ui_file().generic_wstring()))
+			auto premature_shutdown = true;
+			const auto _ = utils::finally([&premature_shutdown]
 			{
-				throw std::runtime_error("BOIII needs an active internet connection for the first time you launch it.");
-			}
-
-			const auto client_binary = "BlackOps3.exe"s;
-			const auto server_binary = "BlackOps3_UnrankedDedicatedServer.exe"s;
-
-			const auto has_client = utils::io::file_exists(client_binary);
-			const auto has_server = utils::io::file_exists(server_binary);
-
-			const auto is_server = utils::flags::has_flag("dedicated") || (!has_client && has_server);
-
-			if (!has_client && !has_server)
-			{
-				throw std::runtime_error(
-					"Can't find a valid BlackOps3.exe or BlackOps3_UnrankedDedicatedServer.exe. Make sure you put boiii.exe in your Black Ops 3 installation folder.");
-			}
-
-			if (!is_server)
-			{
-				trigger_high_performance_gpu_switch();
-
-				const auto launch = utils::flags::has_flag("launch");
-				if (!launch && !utils::nt::is_wine() && !launcher::run())
+				if (premature_shutdown)
 				{
-					return 0;
+					component_loader::pre_destroy();
 				}
-			}
+			});
 
-			if (!component_loader::activate(is_server))
+			try
 			{
-				return 1;
-			}
+				validate_non_network_share();
+				remove_crash_file();
+				updater::update();
 
-			entry_point = load_process(is_server ? server_binary : client_binary);
-			if (!entry_point)
-			{
-				throw std::runtime_error("Unable to load binary into memory");
-			}
-
-			if (is_server != game::is_server())
-			{
-				throw std::runtime_error("Bad binary loaded into memory");
-			}
-
-			if (!is_server && !game::is_client())
-			{
-				if (game::is_legacy_client())
+				if(!utils::io::file_exists(launcher::get_launcher_ui_file().generic_wstring()))
 				{
-					throw std::runtime_error(
-						"You are using the outdated BlackOps3.exe. This version is not supported anymore. Please use the latest binary from Steam.");
+					throw std::runtime_error("BOIII needs an active internet connection for the first time you launch it.");
 				}
 
-				throw std::runtime_error("Bad binary loaded into memory");
+				const auto client_binary = "BlackOps3.exe"s;
+				const auto server_binary = "BlackOps3_UnrankedDedicatedServer.exe"s;
+
+				const auto has_client = utils::io::file_exists(client_binary);
+				const auto has_server = utils::io::file_exists(server_binary);
+
+				const auto is_server = utils::flags::has_flag("dedicated") || (!has_client && has_server);
+
+				if (!is_server)
+				{
+					trigger_high_performance_gpu_switch();
+
+					const auto launch = utils::flags::has_flag("launch");
+					if (!launch && !utils::nt::is_wine() && !launcher::run())
+					{
+						return 0;
+					}
+				}
+
+				if (!component_loader::activate(is_server))
+				{
+					return 1;
+				}
+
+				entry_point = load_process(is_server ? server_binary : client_binary);
+				if (!entry_point)
+				{
+					throw std::runtime_error("Unable to load binary into memory");
+				}
+
+				if (is_server != game::is_server())
+				{
+					throw std::runtime_error("Bad binary loaded into memory");
+				}
+
+				if (!is_server && !game::is_client())
+				{
+					if(game::is_legacy_client())
+					{
+						throw std::runtime_error("You are using the outdated BlackOps3.exe. This version is not supported anymore. Please use the latest binary from Steam.");
+					}
+
+					throw std::runtime_error("Bad binary loaded into memory");
+				}
+
+				patch_imports();
+
+				if (!component_loader::post_load())
+				{
+					return 1;
+				}
+
+				premature_shutdown = false;
 			}
-
-			patch_imports();
-
-			if (!component_loader::post_load())
+			catch (std::exception& e)
 			{
+				MessageBoxA(nullptr, e.what(), "Error", MB_ICONERROR | MB_SETFOREGROUND | MB_TOPMOST);
 				return 1;
 			}
+		}
 
-			premature_shutdown = false;
-		}
-		catch (std::exception& e)
-		{
-			game::show_error(e.what());
-			return 1;
-		}
+		g_call_tls_callbacks = true;
+		return static_cast<int>(entry_point());
 	}
-
-	g_call_tls_callbacks = true;
-	return static_cast<int>(entry_point());
 }
 
 int __stdcall WinMain(HINSTANCE, HINSTANCE, PSTR, int)
